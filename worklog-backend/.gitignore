@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+db.sqlite3
+*.log
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Django
+media/
+staticfiles/ # Or whatever your STATIC_ROOT is set to in settings.py
+collectstatic.log
+
+# Node / Frontend
+node_modules/
+build/
+.env
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE specific files (optional)
+.idea/ # For IntelliJ/PyCharm
+.vscode/ # For VS Code
