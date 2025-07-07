@@ -4,7 +4,7 @@ import 'react-calendar/dist/Calendar.css'; // Default styles for react-calendar
 
 // Define your Django API base URL
 // IMPORTANT: Adjust this port to match the port your Django backend is running on (e.g., 8000 or 8001)
-const API_BASE_URL = 'http://127.0.0.1:8001/api'; 
+const API_BASE_URL = 'https://worklog-72ei.onrender.com/api'; 
 
 // Helper function to make authenticated API calls with JWT token
 async function authenticatedFetch(url, options = {}) {
