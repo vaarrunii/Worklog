@@ -198,5 +198,16 @@ SIMPLE_JWT = {
     'TOKEN_OBTAIN_PAIR_RESPONSE_SERIALIZER': 'core.serializers.MyTokenObtainPairSerializer',
 }
 
-# Email Reminders Configuration (for development, prints to console)
+# Email Configuration for Reminders
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'  # Or your email provider's SMTP host (e.g., 'smtp.office365.com' for Outlook)
+EMAIL_PORT = 587             # Standard SMTP port (often 587 or 465 for SSL)
+EMAIL_USE_TLS = True         # Use TLS encryption
+EMAIL_HOST_USER = 'your_email@example.com'  # Your email address
+EMAIL_HOST_PASSWORD = 'your_email_password_or_app_password' # Your email password or app-specific password
+DEFAULT_FROM_EMAIL = 'your_email@example.com' # The email address that appears as the sender
+SERVER_EMAIL = 'your_email@example.com' # For error messages, etc.
+
+# Optional: To prevent sending actual emails during development/testing
+# if DEBUG:
+#     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

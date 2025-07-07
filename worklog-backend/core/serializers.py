@@ -1,7 +1,11 @@
-# worklog-backend/core/serializers.py
+# worklog_backend/core/serializers.py
+
 from rest_framework import serializers
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model # Use get_user_model for custom user models
 from .models import Project, Task, TimesheetEntry, LeaveRequest
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer # Keep this import
+
+User = get_user_model() # Get the active user model
 
 # Existing User-related Serializers
 class UserSerializer(serializers.ModelSerializer):
@@ -31,41 +35,64 @@ class ProjectSerializer(serializers.ModelSerializer):
         model = Project
         fields = '__all__'
 
-# Existing Task Serializer
+# --- UPDATED Task Serializer for sub-tasks (MODIFIED) ---
 class TaskSerializer(serializers.ModelSerializer):
-    # Read-only fields to display related object names
-    project_name = serializers.ReadOnlyField(source='project.name')
-    assigned_to_username = serializers.ReadOnlyField(source='assigned_to.username')
+    project_name = serializers.CharField(source='project.name', read_only=True) # Changed from ReadOnlyField to CharField
+    assigned_to_username = serializers.CharField(source='assigned_to.username', read_only=True) # Changed from ReadOnlyField to CharField
+    
+    # Add a read-only field for subtasks.
+    subtasks_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        read_only=True,
+        source='subtasks' # This refers to the related_name='subtasks' in the Task model
+    )
+    
+    # To display parent task name if it exists
+    parent_task_name = serializers.CharField(source='parent_task.name', read_only=True) # Changed from ReadOnlyField to CharField
+
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True) # <-- ADDED THIS FIELD
 
     class Meta:
         model = Task
-        fields = '__all__' # Includes all fields, including the new read-only ones
+        fields = [
+            'id', 'project', 'project_name', 'name', 'description',
+            'assigned_to', 'assigned_to_username',
+            'created_by', 'created_by_username', # <-- INCLUDE created_by fields here
+            'due_date', 'status', 'progress', 'parent_task', 'parent_task_name',
+            'subtasks_ids', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_by'] # created_by is set automatically by the view
 
-# Existing Timesheet Entry Serializer
+# --- UPDATED Timesheet Entry Serializer (MODIFIED) ---
 class TimesheetEntrySerializer(serializers.ModelSerializer):
     # Read-only fields to display related object names
-    user_username = serializers.ReadOnlyField(source='user.username')
-    task_name = serializers.ReadOnlyField(source='task.name')
-    project_name = serializers.ReadOnlyField(source='task.project.name') # Access project name via task
+    user_username = serializers.CharField(source='user.username', read_only=True) # Changed from ReadOnlyField to CharField
+    task_name = serializers.CharField(source='task.name', read_only=True) # Changed from ReadOnlyField to CharField
+    project_name = serializers.CharField(source='task.project.name', read_only=True) # Access project name via task
+    
+    # Add fields to represent the task hierarchy in the timesheet entry
+    task_parent_task_id = serializers.IntegerField(source='task.parent_task.id', read_only=True) # Changed to IntegerField
+    task_parent_task_name = serializers.CharField(source='task.parent_task.name', read_only=True) # Changed to CharField
+
 
     class Meta:
         model = TimesheetEntry
         fields = '__all__' # Includes all fields, including the new read-only ones
+        read_only_fields = ['user'] # User is set automatically by the view
 
 # Existing Leave Request Serializer
 class LeaveRequestSerializer(serializers.ModelSerializer):
     # Read-only fields to display related object names
-    user_username = serializers.ReadOnlyField(source='user.username')
-    approved_by_username = serializers.ReadOnlyField(source='approved_by.username')
+    user_username = serializers.CharField(source='user.username', read_only=True) # Changed from ReadOnlyField to CharField
+    approved_by_username = serializers.CharField(source='approved_by.username', read_only=True) # Changed from ReadOnlyField to CharField
 
     class Meta:
         model = LeaveRequest
         # Ensure 'is_hourly', 'start_time', 'end_time' are included in fields if not already
         fields = '__all__' # Includes all fields, including the new read-only ones
+        read_only_fields = ['user', 'status', 'admin_comments', 'approved_by'] # User set by view, status/comments by admin
 
-# --- YOU MUST ADD THIS NEW SERIALIZER FOR JWT TOKEN RESPONSE ---
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-
+# --- JWT TOKEN RESPONSE SERIALIZER (KEEP THIS AS IS) ---
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
     Customizes the JWT token response to include user details like user_id,
