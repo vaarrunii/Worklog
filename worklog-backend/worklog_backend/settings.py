@@ -9,7 +9,8 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
-
+import os
+# ... other imports
 from pathlib import Path
 from datetime import timedelta
 
@@ -27,9 +28,10 @@ SECRET_KEY = 'django-insecure-w2cg8wjk$z+-^a$^l4#okn@0ohl08(z7+me)fa(f#ais-381iq
 DEBUG = True
 
 # IMPORTANT: For development, include localhost and 127.0.0.1
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'localhost:3000', '127.0.0.1:3000']
-
-
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'localhost:3000', '127.0.0.1:3000'
+'worklog-72ei.onrender.com', # Your specific Render URL
+    os.environ.get('RENDER_EXTERNAL_HOSTNAME'),
+]
 # Application definition
 
 INSTALLED_APPS = [
@@ -197,17 +199,3 @@ SIMPLE_JWT = {
     # THIS IS THE ABSOLUTELY CRITICAL LINE TO ADD/CHANGE
     'TOKEN_OBTAIN_PAIR_RESPONSE_SERIALIZER': 'core.serializers.MyTokenObtainPairSerializer',
 }
-
-# Email Configuration for Reminders
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'  # Or your email provider's SMTP host (e.g., 'smtp.office365.com' for Outlook)
-EMAIL_PORT = 587             # Standard SMTP port (often 587 or 465 for SSL)
-EMAIL_USE_TLS = True         # Use TLS encryption
-EMAIL_HOST_USER = 'your_email@example.com'  # Your email address
-EMAIL_HOST_PASSWORD = 'your_email_password_or_app_password' # Your email password or app-specific password
-DEFAULT_FROM_EMAIL = 'your_email@example.com' # The email address that appears as the sender
-SERVER_EMAIL = 'your_email@example.com' # For error messages, etc.
-
-# Optional: To prevent sending actual emails during development/testing
-# if DEBUG:
-#     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
