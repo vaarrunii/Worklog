@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Calendar from 'react-calendar';
-import 'react-calendar/dist/Calendar.css';
+import 'react-calendar/dist/Calendar.css'; // Default styles for react-calendar
 
 // Define your Django API base URL
 // IMPORTANT: Adjust this port to match the port your Django backend is running on (e.g., 8000 or 8001)
@@ -92,8 +92,14 @@ const getWeekDates = (startDate) => {
   return dates;
 };
 
-// Helper to format date as YYYY-MM-DD
+// Helper to format date asYYYY-MM-DD
 const formatDate = (date) => date.toISOString().split('T')[0];
+
+// Helper to get short day name (e.g., Mon, Tue)
+const getDayName = (date) => {
+  const options = { weekday: 'short' };
+  return date.toLocaleDateString('en-US', options);
+};
 
 // --- CORE COMPONENTS (DEFINED FIRST AS THEY ARE CHILDREN) ---
 
@@ -642,8 +648,11 @@ function ProjectManagement({ userId, openConfirmModal }) {
 function TaskAssignment({ userId, openConfirmModal }) {
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
-  const [tasks, setTasks] = useState([]);
+  const [tasks, setTasks] = useState([]); // All tasks, including subtasks
+  const [parentTasks, setParentTasks] = useState([]); // Tasks that can be parents (no parent themselves)
+
   const [selectedProject, setSelectedProject] = useState('');
+  const [selectedParentTask, setSelectedParentTask] = useState(''); // New state for parent task
   const [newTaskName, setNewTaskName] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
@@ -658,7 +667,7 @@ function TaskAssignment({ userId, openConfirmModal }) {
       const [projectsResponse, usersResponse, tasksResponse] = await Promise.all([
         authenticatedFetch(`${API_BASE_URL}/projects/`, { method: 'GET' }),
         authenticatedFetch(`${API_BASE_URL}/users/`, { method: 'GET' }),
-        authenticatedFetch(`${API_BASE_URL}/tasks/`, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/tasks/`, { method: 'GET' }), // Fetch all tasks
       ]);
 
       if (projectsResponse.ok) {
@@ -683,6 +692,8 @@ function TaskAssignment({ userId, openConfirmModal }) {
       if (tasksResponse.ok) {
         const data = await tasksResponse.json();
         setTasks(data);
+        // Filter for top-level tasks (tasks with no parent_task)
+        setParentTasks(data.filter(task => task.parent_task === null));
       } else {
         const errorData = await tasksResponse.json();
         setMessage(`Failed to fetch tasks: ${errorData.detail || 'Unknown error'}`);
@@ -700,6 +711,9 @@ function TaskAssignment({ userId, openConfirmModal }) {
   useEffect(() => {
     fetchInitialData();
   }, [fetchInitialData]);
+
+  // Filter parent tasks based on selected project
+  const filteredParentTasks = parentTasks.filter(task => task.project === parseInt(selectedProject));
 
   const handleAssignTask = async (e) => {
     e.preventDefault();
@@ -719,6 +733,7 @@ function TaskAssignment({ userId, openConfirmModal }) {
           description: newTaskDescription,
           assigned_to: assignedToUser,
           due_date: newTaskDueDate || null,
+          parent_task: selectedParentTask || null, // Include parent_task
         }),
       });
 
@@ -727,10 +742,11 @@ function TaskAssignment({ userId, openConfirmModal }) {
         setNewTaskName('');
         setNewTaskDescription('');
         setNewTaskDueDate('');
-        fetchInitialData();
+        setSelectedParentTask(''); // Clear parent task selection
+        fetchInitialData(); // Re-fetch all data to update lists
       } else {
         const errorData = await response.json();
-        setMessage(`Failed to assign task: ${errorData.name || errorData.detail || 'Unknown error'}`);
+        setMessage(`Failed to assign task: ${errorData.name || errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error assigning task:', error);
@@ -748,6 +764,7 @@ function TaskAssignment({ userId, openConfirmModal }) {
     setNewTaskDescription(task.description);
     setNewTaskDueDate(task.due_date || '');
     setAssignedToUser(task.assigned_to || '');
+    setSelectedParentTask(task.parent_task || ''); // Set parent task for editing
   };
 
   const handleUpdateTask = async (e) => {
@@ -770,6 +787,7 @@ function TaskAssignment({ userId, openConfirmModal }) {
           due_date: newTaskDueDate || null,
           status: editingTask.status,
           progress: editingTask.progress,
+          parent_task: selectedParentTask || null, // Include parent_task for update
         }),
       });
 
@@ -780,10 +798,11 @@ function TaskAssignment({ userId, openConfirmModal }) {
         setNewTaskDescription('');
         setNewTaskDueDate('');
         setAssignedToUser(users.length > 0 ? users[0].id : '');
+        setSelectedParentTask(''); // Clear parent task selection
         fetchInitialData();
       } else {
         const errorData = await response.json();
-        setMessage(`Failed to update task: ${errorData.name || errorData.detail || 'Unknown error'}`);
+        setMessage(`Failed to update task: ${errorData.name || errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error updating task:', error);
@@ -819,6 +838,49 @@ function TaskAssignment({ userId, openConfirmModal }) {
     });
   };
 
+  // Helper to render tasks hierarchically
+  const renderTasks = (tasksToRender, depth = 0) => {
+    return tasksToRender.map(task => (
+      <React.Fragment key={task.id}>
+        <li
+          className={`bg-green-50 p-4 rounded-lg shadow-sm border border-green-100 flex flex-col sm:flex-row justify-between items-start sm:items-center`}
+          style={{ marginLeft: `${depth * 20}px` }} // Indent subtasks
+        >
+          <div className="mb-2 sm:mb-0">
+            <p className="font-semibold text-lg text-green-800">
+              {depth > 0 && '↳ '} {/* Arrow for subtasks */}
+              {task.name} (Project: {task.project_name})
+            </p>
+            {task.parent_task_name && <p className="text-gray-600 text-sm">Parent: {task.parent_task_name}</p>}
+            <p className="text-gray-600 text-sm">Assigned To: {task.assigned_to_username || 'N/A'}</p>
+            <p className="text-gray-600 text-sm">Due Date: {task.due_date || 'N/A'}</p>
+            <p className="text-gray-600 text-sm">Status: <span className={`font-semibold ${task.status === 'completed' ? 'text-green-600' : task.status === 'in_progress' ? 'text-blue-600' : 'text-yellow-600'}`}>{task.status}</span></p>
+            <p className="text-gray-600 text-sm">Progress: {task.progress}%</p>
+          </div>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => handleEditTask(task)}
+              className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition duration-300 text-sm"
+            >
+              Edit
+            </button>
+            <button
+              onClick={() => handleDeleteTask(task.id)}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 text-sm"
+            >
+              Delete
+            </button>
+          </div>
+        </li>
+        {/* Recursively render subtasks if they exist */}
+        {task.subtasks_ids && task.subtasks_ids.length > 0 && (
+          renderTasks(tasks.filter(t => task.subtasks_ids.includes(t.id)), depth + 1)
+        )}
+      </React.Fragment>
+    ));
+  };
+
+
   return (
     <div className="p-4 bg-white rounded-lg shadow-inner">
       <h3 className="text-2xl font-medium text-gray-700 mb-4">Assign Tasks</h3>
@@ -837,7 +899,10 @@ function TaskAssignment({ userId, openConfirmModal }) {
             id="selectProject"
             className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200"
             value={selectedProject}
-            onChange={(e) => setSelectedProject(e.target.value)}
+            onChange={(e) => {
+              setSelectedProject(e.target.value);
+              setSelectedParentTask(''); // Clear parent task when project changes
+            }}
             required
             disabled={isLoading || projects.length === 0}
           >
@@ -850,6 +915,25 @@ function TaskAssignment({ userId, openConfirmModal }) {
                 </option>
               ))
             )}
+          </select>
+        </div>
+        <div className="mb-4">
+          <label htmlFor="selectedParentTask" className="block text-gray-700 text-sm font-bold mb-2">
+            Parent Task (Optional, for Sub-tasks)
+          </label>
+          <select
+            id="selectedParentTask"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200"
+            value={selectedParentTask}
+            onChange={(e) => setSelectedParentTask(e.target.value)}
+            disabled={isLoading || filteredParentTasks.length === 0}
+          >
+            <option value="">No Parent Task (This is a main task)</option>
+            {filteredParentTasks.map((task) => (
+              <option key={task.id} value={task.id}>
+                {task.name}
+              </option>
+            ))}
           </select>
         </div>
         <div className="mb-4">
@@ -928,7 +1012,7 @@ function TaskAssignment({ userId, openConfirmModal }) {
           {editingTask && (
             <button
               type="button"
-              onClick={() => { setEditingTask(null); setNewTaskName(''); setNewTaskDescription(''); setNewTaskDueDate(''); setAssignedToUser(users.length > 0 ? users[0].id : ''); }}
+              onClick={() => { setEditingTask(null); setNewTaskName(''); setNewTaskDescription(''); setNewTaskDueDate(''); setAssignedToUser(users.length > 0 ? users[0].id : ''); setSelectedParentTask(''); }}
               className="bg-gray-400 hover:bg-gray-500 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
               disabled={isLoading}
             >
@@ -945,31 +1029,8 @@ function TaskAssignment({ userId, openConfirmModal }) {
         <p className="text-gray-500">No tasks assigned yet. Assign one above!</p>
       ) : (
         <ul className="space-y-4">
-          {tasks.map((task) => (
-            <li key={task.id} className="bg-green-50 p-4 rounded-lg shadow-sm border border-green-100 flex flex-col sm:flex-row justify-between items-start sm:items-center">
-              <div className="mb-2 sm:mb-0">
-                <p className="font-semibold text-lg text-green-800">{task.name} (Project: {task.project_name})</p>
-                <p className="text-gray-600 text-sm">Assigned To: {task.assigned_to_username || 'N/A'}</p>
-                <p className="text-gray-600 text-sm">Due Date: {task.due_date || 'N/A'}</p>
-                <p className="text-gray-600 text-sm">Status: <span className={`font-semibold ${task.status === 'completed' ? 'text-green-600' : task.status === 'in_progress' ? 'text-blue-600' : 'text-yellow-600'}`}>{task.status}</span></p>
-                <p className="text-gray-600 text-sm">Progress: {task.progress}%</p>
-              </div>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => handleEditTask(task)}
-                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition duration-300 text-sm"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDeleteTask(task.id)}
-                  className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 text-sm"
-                >
-                  Delete
-                </button>
-              </div>
-            </li>
-          ))}
+          {/* Render only top-level tasks initially, and let recursion handle subtasks */}
+          {renderTasks(tasks.filter(task => task.parent_task === null))}
         </ul>
       )}
     </div>
@@ -1099,7 +1160,7 @@ function UserManagement({ userId, openConfirmModal }) {
             id="newEmail"
             className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200"
             value={newEmail}
-            onChange={(e) => setNewEmail(e.target.value)}
+            onChange={(e) => setEmail(e.target.value)}
             required
             disabled={isLoading}
           />
@@ -1488,7 +1549,7 @@ function Reporting({ userId }) {
   );
 }
 
-// Calendar View Component
+// Calendar View Component - IMPROVED STYLING
 function CalendarView({ userId, userRole }) {
   const [date, setDate] = useState(new Date());
   const [events, setEvents] = useState([]);
@@ -1526,6 +1587,7 @@ function CalendarView({ userId, userRole }) {
               description: task.description,
               project_name: task.project_name,
               assigned_to_username: task.assigned_to_username,
+              parent_task_name: task.parent_task_name, // Include parent task name
             });
           }
         });
@@ -1593,20 +1655,21 @@ function CalendarView({ userId, userRole }) {
       );
 
       return (
-        <div className="flex flex-col items-center justify-center text-xs">
+        <div className="flex flex-col items-center justify-center text-xs mt-1">
           {dayEvents.map(event => (
             <div
               key={event.id}
-              className={`w-full text-center rounded-sm mt-0.5 px-0.5 py-0.5
+              className={`w-full text-center rounded-sm px-0.5 py-0.5 my-0.5
                 ${event.type === 'task' ?
-                  (event.status === 'completed' ? 'bg-green-200 text-green-800' : 'bg-blue-200 text-blue-800') :
-                  (event.status === 'approved' ? 'bg-pink-200 text-pink-800' : event.status === 'pending' ? 'bg-yellow-200 text-yellow-800' : 'bg-red-200 text-red-800')
-                }`}
+                  (event.status === 'completed' ? 'bg-green-300 text-green-900' : 'bg-blue-300 text-blue-900') :
+                  (event.status === 'approved' ? 'bg-pink-300 text-pink-900' : event.status === 'pending' ? 'bg-yellow-300 text-yellow-900' : 'bg-red-300 text-red-900')
+                }
+                font-medium truncate`}
               title={`${event.title} (${event.type === 'task' ? `Status: ${event.status}` :
                 (event.is_hourly ? `Status: ${event.status}, ${event.start_time}-${event.end_time}, Reason: ${event.reason}` : `Status: ${event.status}, Reason: ${event.reason}`)
               }`}
             >
-              {event.title.split(' ')[0]}
+              {event.type === 'task' ? '✓ Task' : '✈︎ Leave'}
             </div>
           ))}
         </div>
@@ -1616,63 +1679,72 @@ function CalendarView({ userId, userRole }) {
   };
 
   return (
-    <div className="p-4 bg-white rounded-lg shadow-inner">
-      <h3 className="text-2xl font-medium text-gray-700 mb-4">Calendar View</h3>
+    <div className="p-4 bg-white rounded-lg shadow-xl border border-gray-200">
+      <h3 className="text-3xl font-bold text-gray-800 mb-6 text-center">WorkLog Calendar</h3>
       {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-orange-100 border border-orange-400 text-orange-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-green-100 border border-green-400 text-green-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
           <span className="block sm:inline">{message}</span>
         </div>
       )}
-      <div className="flex justify-center mb-6">
+      <div className="flex justify-center mb-8">
         <Calendar
           onChange={setDate}
           value={date}
           tileContent={tileContent}
-          className="rounded-lg shadow-md border border-gray-200 p-4 w-full max-w-xl"
+          className="rounded-lg shadow-lg border border-gray-300 p-6 w-full max-w-2xl custom-calendar"
+          // Custom class for react-calendar to apply more specific styles if needed
         />
       </div>
 
-      <h4 className="text-xl font-medium text-gray-700 mb-3">Events for {date.toDateString()}</h4>
+      <h4 className="text-2xl font-semibold text-gray-700 mb-4 text-center">Events for {date.toDateString()}</h4>
       {isLoading ? (
-        <p className="text-gray-500">Loading events...</p>
+        <p className="text-gray-500 text-center py-4">Loading events...</p>
       ) : (
-        <ul className="space-y-3">
+        <div className="bg-gray-50 p-6 rounded-lg shadow-md border border-gray-100">
           {events.filter(event => event.date.toDateString() === date.toDateString()).length === 0 ? (
-            <p className="text-gray-500">No events on this date.</p>
+            <p className="text-gray-500 text-center py-4">No events on this date.</p>
           ) : (
-            events.filter(event => event.date.toDateString() === date.toDateString()).map(event => (
-              <li key={event.id} className={`p-3 rounded-lg shadow-sm border
-                ${event.type === 'task' ? 'bg-blue-50 border-blue-100' : 'bg-pink-50 border-pink-100'}`}>
-                <p className="font-semibold text-lg">
-                  {event.title}
-                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold
-                    ${event.type === 'task' ?
-                      (event.status === 'completed' ? 'bg-green-200 text-green-800' : 'bg-blue-200 text-blue-800') :
-                      (event.status === 'approved' ? 'bg-green-200 text-green-800' : event.status === 'pending' ? 'bg-yellow-200 text-yellow-800' : 'bg-red-200 text-red-800')
-                    }`}
-                  >
-                    {event.status}
-                  </span>
-                </p>
-                {event.type === 'task' && (
-                  <>
-                    <p className="text-gray-600 text-sm">Project: {event.project_name}</p>
-                    <p className="text-gray-600 text-sm">Assigned To: {event.assigned_to_username}</p>
-                    <p className="text-gray-600 text-sm">Description: {event.description}</p>
-                  </>
-                )}
-                {event.type === 'leave' && (
-                  <>
-                    {event.is_hourly && (
-                      <p className="text-gray-600 text-sm">Time: {event.start_time} - {event.end_time}</p>
-                    )}
-                    <p className="text-gray-600 text-sm">Reason: {event.reason}</p>
-                  </>
-                )}
-              </li>
-            ))
+            <ul className="space-y-4">
+              {events.filter(event => event.date.toDateString() === date.toDateString()).map(event => (
+                <li key={event.id} className={`p-4 rounded-lg shadow-sm border
+                  ${event.type === 'task' ? 'bg-blue-100 border-blue-200' : 'bg-pink-100 border-pink-200'}`}>
+                  <div className="flex items-center mb-2">
+                    <span className={`text-xl mr-3 ${event.type === 'task' ? 'text-blue-600' : 'text-pink-600'}`}>
+                      {event.type === 'task' ? '✓' : '✈︎'}
+                    </span>
+                    <p className="font-bold text-xl text-gray-800">
+                      {event.title}
+                      {event.parent_task_name && <span className="text-gray-600 text-sm ml-2"> (Parent: {event.parent_task_name})</span>}
+                      <span className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold
+                        ${event.type === 'task' ?
+                          (event.status === 'completed' ? 'bg-green-200 text-green-800' : 'bg-blue-200 text-blue-800') :
+                          (event.status === 'approved' ? 'bg-green-200 text-green-800' : event.status === 'pending' ? 'bg-yellow-200 text-yellow-800' : 'bg-red-200 text-red-800')
+                        }`}
+                      >
+                        {event.status.replace('_', ' ')}
+                      </span>
+                    </p>
+                  </div>
+                  {event.type === 'task' && (
+                    <div className="pl-8 text-gray-700 space-y-1">
+                      <p className="text-sm"><strong>Project:</strong> {event.project_name}</p>
+                      <p className="text-sm"><strong>Assigned To:</strong> {event.assigned_to_username}</p>
+                      <p className="text-sm"><strong>Description:</strong> {event.description}</p>
+                    </div>
+                  )}
+                  {event.type === 'leave' && (
+                    <div className="pl-8 text-gray-700 space-y-1">
+                      {event.is_hourly && (
+                        <p className="text-sm"><strong>Time:</strong> {event.start_time} - {event.end_time}</p>
+                      )}
+                      <p className="text-sm"><strong>Reason:</strong> {event.reason}</p>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
-        </ul>
+        </div>
       )}
     </div>
   );
@@ -1687,14 +1759,19 @@ function TimesheetEntry({ userId, openConfirmModal }) {
     return new Date(today.setDate(diff));
   });
   const [weekDates, setWeekDates] = useState([]);
-  const [timesheetEntriesMap, setTimesheetEntriesMap] = useState({});
-  const [userTasks, setUserTasks] = useState([]);
+  const [timesheetEntries, setTimesheetEntries] = useState([]); // Flat list of all entries for the week
+  const [userTasks, setUserTasks] = useState([]); // All tasks assigned to the user
+  const [projects, setProjects] = useState([]); // All projects
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const saveTimeoutRef = useRef(null);
+  // State for dynamically added rows
+  const [dynamicRows, setDynamicRows] = useState([]); // { id: uniqueId, projectId: '', taskId: '', subtaskId: '' }
+  const nextRowId = useRef(0);
 
-  const fetchWeeklyTimesheets = useCallback(async (weekStartDate) => {
+  const saveTimeoutRef = useRef({}); // Use an object to store timeouts per entry
+
+  const fetchTimesheetData = useCallback(async (weekStartDate) => {
     setIsLoading(true);
     setMessage('');
     const dates = getWeekDates(weekStartDate);
@@ -1704,9 +1781,12 @@ function TimesheetEntry({ userId, openConfirmModal }) {
     const endDateStr = formatDate(dates[6]);
 
     try {
-      const tasksResponse = await authenticatedFetch(`${API_BASE_URL}/tasks/?assigned_to=${userId}`, {
-        method: 'GET',
-      });
+      const [tasksResponse, entriesResponse, projectsResponse] = await Promise.all([
+        authenticatedFetch(`${API_BASE_URL}/tasks/?assigned_to=${userId}`, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/timesheets/?user=${userId}&start_date=${startDateStr}&end_date=${endDateStr}`, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/projects/`, { method: 'GET' }),
+      ]);
+
       let fetchedTasks = [];
       if (tasksResponse.ok) {
         fetchedTasks = await tasksResponse.json();
@@ -1716,89 +1796,187 @@ function TimesheetEntry({ userId, openConfirmModal }) {
         setMessage(`Failed to fetch tasks: ${errorData.detail || 'Unknown error'}`);
       }
 
-      const entriesResponse = await authenticatedFetch(`${API_BASE_URL}/timesheets/?user=${userId}&start_date=${startDateStr}&end_date=${endDateStr}`, {
-        method: 'GET',
-      });
       let fetchedEntries = [];
       if (entriesResponse.ok) {
         fetchedEntries = await entriesResponse.json();
+        setTimesheetEntries(fetchedEntries);
       } else {
         const errorData = await entriesResponse.json();
         setMessage(`Failed to fetch timesheet entries: ${errorData.detail || 'Unknown error'}`);
       }
 
-      const newEntriesMap = {};
+      if (projectsResponse.ok) {
+        setProjects(await projectsResponse.json());
+      } else {
+        setMessage(`Failed to fetch projects: ${projectsResponse.statusText}`);
+      }
+
+      // Initialize dynamic rows based on fetched entries
+      const initialDynamicRows = [];
+      const usedTaskIds = new Set(); // To avoid duplicate rows for the same task
       fetchedEntries.forEach(entry => {
-        if (!newEntriesMap[entry.task]) {
-          newEntriesMap[entry.task] = {};
+        if (!usedTaskIds.has(entry.task)) {
+          const task = fetchedTasks.find(t => t.id === entry.task);
+          if (task) {
+            initialDynamicRows.push({
+              id: nextRowId.current++,
+              projectId: task.project,
+              taskId: task.parent_task || task.id, // If it's a subtask, use its parent as main task
+              subtaskId: task.parent_task ? task.id : '', // If it's a subtask, set its ID
+            });
+            usedTaskIds.add(entry.task);
+          }
         }
-        newEntriesMap[entry.task][entry.date] = entry;
       });
-      setTimesheetEntriesMap(newEntriesMap);
+      
+      // Ensure there's always at least one empty row for new input
+      if (initialDynamicRows.length === 0) {
+        initialDynamicRows.push({
+          id: nextRowId.current++,
+          projectId: '',
+          taskId: '',
+          subtaskId: '',
+        });
+      } else {
+        // If there are existing entries, add one more empty row if the last one is filled
+        const lastRow = initialDynamicRows[initialDynamicRows.length - 1];
+        const lastRowTaskId = lastRow.subtaskId || lastRow.taskId;
+        const isLastRowFilled = lastRowTaskId && weekDates.some(date => {
+            const entry = timesheetEntries.find(e => e.task === parseInt(lastRowTaskId) && e.date === formatDate(date));
+            return entry && entry.hours > 0;
+        });
+
+        if (isLastRowFilled || !lastRowTaskId) { // If last row has hours or no task selected, add a new empty one
+            initialDynamicRows.push({
+                id: nextRowId.current++,
+                projectId: '',
+                taskId: '',
+                subtaskId: '',
+            });
+        }
+      }
+      
+      setDynamicRows(initialDynamicRows);
 
     } catch (error) {
-      console.error('Error fetching weekly timesheet data:', error);
+      console.error('Error fetching timesheet data:', error);
       setMessage('Network error while fetching timesheet data.');
     } finally {
       setIsLoading(false);
       setTimeout(() => setMessage(''), 5000);
     }
-  }, [userId]);
+  }, [userId]); // Removed weekDates from deps to prevent re-fetch loop, it's set inside.
 
   useEffect(() => {
     if (userId) {
-      fetchWeeklyTimesheets(currentWeekStart);
+      fetchTimesheetData(currentWeekStart);
     }
-  }, [userId, currentWeekStart, fetchWeeklyTimesheets]);
+  }, [userId, currentWeekStart, fetchTimesheetData]);
 
-  const handleHoursChange = (taskId, dateString, hoursInput) => {
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+  const handleAddRow = () => {
+    setDynamicRows(prevRows => [
+      ...prevRows,
+      { id: nextRowId.current++, projectId: '', taskId: '', subtaskId: '' },
+    ]);
+  };
+
+  const handleRemoveRow = (rowId) => {
+    setDynamicRows(prevRows => prevRows.filter(row => row.id !== rowId));
+  };
+
+  const handleRowSelectChange = (rowId, field, value) => {
+    setDynamicRows(prevRows =>
+      prevRows.map(row => {
+        if (row.id === rowId) {
+          const newRow = { ...row, [field]: value };
+          // Reset dependent fields if parent changes
+          if (field === 'projectId') {
+            newRow.taskId = '';
+            newRow.subtaskId = '';
+          } else if (field === 'taskId') {
+            newRow.subtaskId = '';
+          }
+          return newRow;
+        }
+        return row;
+      })
+    );
+  };
+
+  const handleHoursChange = (rowId, dateString, hoursInput) => {
+    // Clear previous timeout for this specific row and date combination
+    const entryKey = `${rowId}-${dateString}`;
+    if (saveTimeoutRef.current[entryKey]) {
+      clearTimeout(saveTimeoutRef.current[entryKey]);
     }
 
     const newHours = parseFloat(hoursInput) || 0;
-    setTimesheetEntriesMap(prevMap => {
-      const newMap = { ...prevMap };
-      if (!newMap[taskId]) {
-        newMap[taskId] = {};
-      }
-      newMap[taskId][dateString] = {
-        ...newMap[taskId][dateString],
-        task: taskId,
-        date: dateString,
-        hours: newHours,
-        user: userId,
-      };
-      return newMap;
+    
+    // Find the current row to get the selected task hierarchy
+    const currentRow = dynamicRows.find(row => row.id === rowId);
+    if (!currentRow) {
+        console.error("Row not found for hours change:", rowId);
+        setMessage("Error: Timesheet row not found.");
+        return;
+    }
+
+    // Determine the actual task ID to log against (subtask if selected, otherwise main task)
+    const taskIdToLog = currentRow.subtaskId || currentRow.taskId;
+    if (!taskIdToLog) {
+        setMessage("Please select a Project and Task/Subtask before logging hours.");
+        setTimeout(() => setMessage(''), 3000);
+        return;
+    }
+
+    // Find if an existing entry for this task and date exists
+    const existingEntry = timesheetEntries.find(
+      entry => entry.task === parseInt(taskIdToLog) && entry.date === dateString
+    );
+
+    const entryToSave = {
+      id: existingEntry ? existingEntry.id : undefined,
+      task: parseInt(taskIdToLog),
+      date: dateString,
+      hours: newHours,
+      user: userId,
+    };
+
+    // Optimistically update the UI
+    setTimesheetEntries(prevEntries => {
+        const updatedEntries = prevEntries.filter(
+            e => !(e.task === entryToSave.task && e.date === entryToSave.date)
+        );
+        if (entryToSave.hours > 0) {
+            updatedEntries.push(entryToSave);
+        }
+        return updatedEntries;
     });
 
-    saveTimeoutRef.current = setTimeout(async () => {
-      const entryToSave = timesheetEntriesMap[taskId]?.[dateString] || {
-        task: taskId,
-        date: dateString,
-        hours: newHours,
-        user: userId,
-      };
-
+    saveTimeoutRef.current[entryKey] = setTimeout(async () => {
       if (entryToSave.hours <= 0 && entryToSave.id) {
         openConfirmModal('Hours are 0. Do you want to delete this timesheet entry?', async () => {
+          setIsLoading(true);
           try {
             const response = await authenticatedFetch(`${API_BASE_URL}/timesheets/${entryToSave.id}/`, {
               method: 'DELETE',
             });
             if (response.ok) {
               setMessage('Entry deleted successfully.');
-              fetchWeeklyTimesheets(currentWeekStart);
+              fetchTimesheetData(currentWeekStart); // Re-fetch to ensure UI is consistent
             } else {
               const errorData = await response.json();
               setMessage(`Failed to delete entry: ${errorData.detail || 'Unknown error'}`);
             }
           } catch (error) {
             setMessage('Network error deleting entry.');
+          } finally {
+            setIsLoading(false);
+            setTimeout(() => setMessage(''), 5000);
           }
         });
-        return;
+        return; // Exit here, action handled by modal
       } else if (entryToSave.hours <= 0 && !entryToSave.id) {
+        // If hours are 0 and no existing ID, just do nothing (don't save a 0-hour new entry)
         return;
       }
 
@@ -1820,83 +1998,99 @@ function TimesheetEntry({ userId, openConfirmModal }) {
         if (response.ok) {
           const savedEntry = await response.json();
           setMessage('Timesheet entry saved!');
-          setTimesheetEntriesMap(prevMap => {
-            const newMap = { ...prevMap };
-            if (!newMap[taskId]) {
-              newMap[taskId] = {};
-            }
-            newMap[taskId][dateString] = savedEntry;
-            return newMap;
+          // Update the specific entry in the main timesheetEntries state
+          setTimesheetEntries(prevEntries => {
+            const updatedEntries = prevEntries.filter(
+                e => !(e.task === savedEntry.task && e.date === savedEntry.date)
+            );
+            updatedEntries.push(savedEntry);
+            return updatedEntries;
           });
         } else {
           const errorData = await response.json();
           setMessage(`Failed to save entry: ${errorData.non_field_errors || errorData.detail || 'Unknown error'}`);
+          // Revert optimistic update if save fails
+          fetchTimesheetData(currentWeekStart);
         }
       } catch (error) {
         console.error('Error saving timesheet entry:', error);
         setMessage('Network error while saving timesheet entry.');
+        // Revert optimistic update if save fails
+        fetchTimesheetData(currentWeekStart);
       } finally {
         setIsLoading(false);
         setTimeout(() => setMessage(''), 5000);
       }
-    }, 1000);
+    }, 1000); // 1-second debounce
   };
 
-  const handlePreviousWeek = () => {
+  const handlePreviousWeek = useCallback(() => {
     const newDate = new Date(currentWeekStart);
     newDate.setDate(newDate.getDate() - 7);
     setCurrentWeekStart(newDate);
-  };
+  }, [currentWeekStart]);
 
-  const handleNextWeek = () => {
+  const handleNextWeek = useCallback(() => {
     const newDate = new Date(currentWeekStart);
     newDate.setDate(newDate.getDate() + 7);
     setCurrentWeekStart(newDate);
-  };
+  }, [currentWeekStart]);
 
-  const getWeekRangeString = () => {
+  const getWeekRangeString = useCallback(() => {
     if (weekDates.length === 0) return 'Loading Week...';
     const start = weekDates[0];
     const end = weekDates[6];
     const options = { month: 'short', day: 'numeric' };
     return `${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', options)}`;
-  };
+  }, [weekDates]);
 
-  const getDayName = (date) => {
-    const options = { weekday: 'short' };
-    return date.toLocaleDateString('en-US', options);
-  };
-
-  const getDailyTotal = (dateString) => {
+  const getDailyTotal = useCallback((dateString) => {
     let total = 0;
-    userTasks.forEach(task => {
-      const entry = timesheetEntriesMap[task.id]?.[dateString];
-      if (entry && entry.hours) {
+    timesheetEntries.forEach(entry => {
+      if (entry.date === dateString) {
         total += parseFloat(entry.hours);
       }
     });
     return total.toFixed(2);
-  };
+  }, [timesheetEntries]);
 
-  const getTaskRowTotal = (taskId) => {
+  const getRowTotal = useCallback((rowId) => {
     let total = 0;
+    const currentRow = dynamicRows.find(row => row.id === rowId);
+    if (!currentRow) return '0.00';
+
+    const taskIdToLog = currentRow.subtaskId || currentRow.taskId;
+    if (!taskIdToLog) return '0.00';
+
     weekDates.forEach(date => {
       const dateString = formatDate(date);
-      const entry = timesheetEntriesMap[taskId]?.[dateString];
+      const entry = timesheetEntries.find(e => e.task === parseInt(taskIdToLog) && e.date === dateString);
       if (entry && entry.hours) {
         total += parseFloat(entry.hours);
       }
     });
     return total.toFixed(2);
-  };
+  }, [dynamicRows, timesheetEntries, weekDates]);
 
-  const getGrandTotal = () => {
+  const getGrandTotal = useCallback(() => {
     let grandTotal = 0;
-    userTasks.forEach(task => {
-      grandTotal += parseFloat(getTaskRowTotal(task.id));
+    weekDates.forEach(date => {
+      grandTotal += parseFloat(getDailyTotal(formatDate(date)));
     });
     return grandTotal.toFixed(2);
-  };
+  }, [weekDates, getDailyTotal]);
+
+  // Filter tasks based on selected project and parent task for dropdowns
+  const getTasksForProject = useCallback((projectId) => {
+    // Return top-level tasks for the selected project
+    return userTasks.filter(task => task.project === parseInt(projectId) && task.parent_task === null);
+  }, [userTasks]);
+
+  const getSubtasksForTask = useCallback((taskId) => {
+    // Return subtasks whose parent is the selected taskId
+    return userTasks.filter(task => task.parent_task === parseInt(taskId));
+  }, [userTasks]);
+
 
   return (
     <div className="p-4 bg-white rounded-lg shadow-inner">
@@ -1925,73 +2119,140 @@ function TimesheetEntry({ userId, openConfirmModal }) {
         </button>
       </div>
 
-      {isLoading && userTasks.length === 0 && Object.keys(timesheetEntriesMap).length === 0 ? (
+      {isLoading && userTasks.length === 0 && timesheetEntries.length === 0 ? (
         <p className="text-gray-500 text-center py-8">Loading timesheet data...</p>
       ) : userTasks.length === 0 ? (
-        <p className="text-gray-500 text-center py-8">No tasks assigned to you for this week. Please check your assigned tasks or try a different week.</p>
+        <p className="text-gray-500 text-center py-8">No tasks assigned to you. Please contact your admin.</p>
       ) : (
         <div className="overflow-x-auto relative shadow-md sm:rounded-lg">
           <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
             <thead className="text-xs text-gray-700 uppercase bg-gray-200 dark:bg-gray-700 dark:text-gray-400">
               <tr>
-                <th scope="col" className="py-3 px-6 min-w-[200px]">Task / Project</th>
-                <th scope="col" className="py-3 px-6 text-center">Status</th>
+                <th scope="col" className="py-3 px-6 min-w-[300px]">Project / Task / Subtask</th>
                 {weekDates.map((date, index) => (
                   <th key={index} scope="col" className="py-3 px-6 text-center">
                     {getDayName(date)}<br/>{date.getDate()}
                   </th>
                 ))}
                 <th scope="col" className="py-3 px-6 text-center">Total</th>
+                <th scope="col" className="py-3 px-6 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {userTasks.map(task => (
-                <tr key={task.id} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
-                  <th scope="row" className="py-4 px-6 font-medium text-gray-900 whitespace-nowrap dark:text-white">
-                    <p className="font-semibold text-base">{task.name}</p>
-                    <p className="text-xs text-gray-500">{task.project_name}</p>
-                  </th>
-                  <td className="py-4 px-6 text-center">
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                      task.status === 'completed' ? 'bg-green-200 text-green-800' :
-                      task.status === 'in_progress' ? 'bg-blue-200 text-blue-800' :
-                      'bg-yellow-200 text-yellow-800'
-                    }`}>
-                      {task.status === 'completed' ? 'Approved' : task.status.replace('_', ' ')}
-                    </span>
-                  </td>
-                  {weekDates.map((date, index) => {
-                    const dateString = formatDate(date);
-                    const entry = timesheetEntriesMap[task.id]?.[dateString];
-                    return (
-                      <td key={index} className="py-4 px-2 text-center">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.5"
-                          value={entry?.hours || ''}
-                          onChange={(e) => handleHoursChange(task.id, dateString, e.target.value)}
-                          className="w-20 p-2 border rounded-md text-center focus:ring-blue-300 focus:border-blue-300 transition duration-150"
+              {dynamicRows.map((row, rowIndex) => {
+                const selectedProjectObj = projects.find(p => p.id === parseInt(row.projectId));
+                const selectedMainTaskObj = userTasks.find(t => t.id === parseInt(row.taskId));
+                const selectedSubtaskObj = userTasks.find(t => t.id === parseInt(row.subtaskId));
+
+                // Determine the actual task object this row represents for logging
+                const taskForLogging = selectedSubtaskObj || selectedMainTaskObj;
+                const taskIdForLogging = taskForLogging ? taskForLogging.id : null;
+
+                return (
+                  <tr key={row.id} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                    <td className="py-4 px-6">
+                      <div className="flex flex-col space-y-2">
+                        {/* Project Dropdown */}
+                        <select
+                          className="w-full p-2 border rounded-md focus:ring-blue-300 focus:border-blue-300 transition duration-150"
+                          value={row.projectId}
+                          onChange={(e) => handleRowSelectChange(row.id, 'projectId', e.target.value)}
                           disabled={isLoading}
-                        />
-                      </td>
-                    );
-                  })}
-                  <td className="py-4 px-6 text-center font-bold text-gray-900 dark:text-white">
-                    {getTaskRowTotal(task.id)}
-                  </td>
-                </tr>
-              ))}
-              {/* Total Row */}
+                        >
+                          <option value="">Select Project</option>
+                          {projects.map(project => (
+                            <option key={project.id} value={project.id}>{project.name}</option>
+                          ))}
+                        </select>
+
+                        {/* Main Task Dropdown */}
+                        <select
+                          className="w-full p-2 border rounded-md focus:ring-blue-300 focus:border-blue-300 transition duration-150"
+                          value={row.taskId}
+                          onChange={(e) => handleRowSelectChange(row.id, 'taskId', e.target.value)}
+                          disabled={isLoading || !row.projectId || getTasksForProject(row.projectId).length === 0}
+                        >
+                          <option value="">Select Main Task</option>
+                          {getTasksForProject(row.projectId).map(task => (
+                            <option key={task.id} value={task.id}>{task.name}</option>
+                          ))}
+                        </select>
+
+                        {/* Subtask Dropdown */}
+                        {row.taskId && getSubtasksForTask(row.taskId).length > 0 && (
+                          <select
+                            className="w-full p-2 border rounded-md focus:ring-blue-300 focus:border-blue-300 transition duration-150"
+                            value={row.subtaskId}
+                            onChange={(e) => handleRowSelectChange(row.id, 'subtaskId', e.target.value)}
+                            disabled={isLoading}
+                          >
+                            <option value="">Select Subtask (Optional)</option>
+                            {getSubtasksForTask(row.taskId).map(subtask => (
+                              <option key={subtask.id} value={subtask.id}>{subtask.name}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    </td>
+                    {weekDates.map((date, dateIndex) => {
+                      const dateString = formatDate(date);
+                      // Find the entry for this specific task (main or sub) and date
+                      const entry = timesheetEntries.find(
+                        e => e.task === parseInt(taskIdForLogging) && e.date === dateString
+                      );
+                      return (
+                        <td key={dateIndex} className="py-4 px-2 text-center">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={entry?.hours || ''}
+                            onChange={(e) => handleHoursChange(row.id, dateString, e.target.value)}
+                            className="w-20 p-2 border rounded-md text-center focus:ring-blue-300 focus:border-blue-300 transition duration-150"
+                            disabled={isLoading || !taskIdForLogging} // Disable if no task selected
+                          />
+                        </td>
+                      );
+                    })}
+                    <td className="py-4 px-6 text-center font-bold text-gray-900 dark:text-white">
+                      {getRowTotal(row.id)}
+                    </td>
+                    <td className="py-4 px-6 text-center">
+                      {dynamicRows.length > 1 && ( // Only show remove button if more than one row
+                        <button
+                          onClick={() => handleRemoveRow(row.id)}
+                          className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 text-sm"
+                          disabled={isLoading}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Add Row Button */}
+              <tr>
+                <td colSpan={weekDates.length + 3} className="py-4 px-6 text-center">
+                  <button
+                    onClick={handleAddRow}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-300 shadow-md"
+                    disabled={isLoading}
+                  >
+                    Add Timesheet Row
+                  </button>
+                </td>
+              </tr>
+              {/* Total Row - Ensure no whitespace between <td> and its content, and no empty <td> tags */}
               <tr className="bg-gray-200 dark:bg-gray-700 text-gray-700 uppercase font-bold">
                 <td className="py-3 px-6">Total</td>
-                <td className="py-3 px-6 text-center"></td>
                 {weekDates.map((date, index) => (
                   <td key={index} className="py-3 px-6 text-center">
                     {getDailyTotal(formatDate(date))}
                   </td>
                 ))}
                 <td className="py-3 px-6 text-center">{getGrandTotal()}</td>
+                <td className="py-3 px-6 text-center"></td> {/* Empty cell for actions column, but no trailing whitespace */}
               </tr>
             </tbody>
           </table>
@@ -2082,9 +2343,10 @@ function LeaveRequest({ userId, openConfirmModal }) {
     setIsLoading(true);
     try {
       const payload = {
+        user: userId, // ADDED: User ID for the leave request
         leave_type: leaveType,
         start_date: startDate,
-        end_date: isHourly ? startDate : endDate,
+        end_date: isHourly ? null : endDate, // Set end_date to null if it's hourly leave
         reason: reason,
         is_hourly: isHourly,
         start_time: isHourly ? startTime : null,
@@ -2169,9 +2431,10 @@ function LeaveRequest({ userId, openConfirmModal }) {
     setIsLoading(true);
     try {
       const payload = {
+        user: userId, // ADDED: User ID for the leave request
         leave_type: leaveType,
         start_date: startDate,
-        end_date: isHourly ? startDate : endDate,
+        end_date: isHourly ? null : endDate, // Set end_date to null if it's hourly leave
         reason: reason,
         is_hourly: isHourly,
         start_time: isHourly ? startTime : null,
@@ -2454,6 +2717,223 @@ function LeaveRequest({ userId, openConfirmModal }) {
   );
 }
 
+// NEW COMPONENT: UserTaskManagement
+function UserTaskManagement({ userId, openConfirmModal }) {
+  const [projects, setProjects] = useState([]);
+  const [userTasks, setUserTasks] = useState([]); // Tasks assigned to this user (for parent task dropdown)
+  const [selectedProject, setSelectedProject] = useState('');
+  const [selectedParentTask, setSelectedParentTask] = useState('');
+  const [newTaskName, setNewTaskName] = useState('');
+  const [newTaskDescription, setNewTaskDescription] = useState('');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchUserProjectsAndTasks = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      // Fetch all projects (user can create tasks under any project)
+      const projectsResponse = await authenticatedFetch(`${API_BASE_URL}/projects/`, { method: 'GET' });
+      if (projectsResponse.ok) {
+        setProjects(await projectsResponse.json());
+      } else {
+        setMessage(`Failed to fetch projects: ${projectsResponse.statusText}`);
+      }
+
+      // Fetch tasks assigned to the current user (these can be parent tasks)
+      const tasksResponse = await authenticatedFetch(`${API_BASE_URL}/tasks/?assigned_to=${userId}`, { method: 'GET' });
+      if (tasksResponse.ok) {
+        setUserTasks(await tasksResponse.json());
+      } else {
+        setMessage(`Failed to fetch user tasks: ${tasksResponse.statusText}`);
+      }
+
+    } catch (error) {
+      console.error('Error fetching user projects and tasks:', error);
+      setMessage('Network error while fetching data.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId) {
+      fetchUserProjectsAndTasks();
+    }
+  }, [userId, fetchUserProjectsAndTasks]);
+
+  const handleCreateTask = async (e) => {
+    e.preventDefault();
+    if (!newTaskName.trim() || !selectedProject) {
+      setMessage('Please select a project and enter a task name.');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+
+    setIsLoading(true);
+    setMessage('');
+
+    try {
+      const payload = {
+        project: selectedProject,
+        name: newTaskName,
+        description: newTaskDescription,
+        assigned_to: userId, // Automatically assign to the current user
+        due_date: newTaskDueDate || null,
+        parent_task: selectedParentTask || null,
+        status: 'pending', // Default status for user-created tasks
+        progress: 0, // Default progress
+      };
+
+      const response = await authenticatedFetch(`${API_BASE_URL}/tasks/`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      if (response.ok) {
+        setMessage('Task/Subtask created successfully!');
+        setNewTaskName('');
+        setNewTaskDescription('');
+        setNewTaskDueDate('');
+        setSelectedParentTask('');
+        setSelectedProject(''); // Optionally reset project too
+        fetchUserProjectsAndTasks(); // Re-fetch to update the task list
+      } else {
+        const errorData = await response.json();
+        setMessage(`Failed to create task: ${errorData.name || errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error creating task:', error);
+      setMessage('Network error while creating task.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
+  // Filter tasks that can be parent tasks for the selected project and assigned to this user
+  const availableParentTasks = userTasks.filter(task =>
+    task.project === parseInt(selectedProject) && task.parent_task === null
+  );
+
+  return (
+    <div className="p-4 bg-white rounded-lg shadow-inner">
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Create My Tasks/Subtasks</h3>
+      <p className="text-gray-600 mb-4">
+        Here you can create new tasks for yourself. If you select a "Parent Task," the new entry will be a subtask under it.
+        Otherwise, it will be a main task.
+      </p>
+      {message && (
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-indigo-100 border border-indigo-400 text-indigo-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+          <span className="block sm:inline">{message}</span>
+        </div>
+      )}
+      <form onSubmit={handleCreateTask} className="mb-6 bg-indigo-50 p-6 rounded-lg shadow-sm border border-indigo-100">
+        <h4 className="text-xl font-medium text-gray-700 mb-4">New Task/Subtask Details</h4>
+        
+        <div className="mb-4">
+          <label htmlFor="selectProjectUser" className="block text-gray-700 text-sm font-bold mb-2">
+            Select Project
+          </label>
+          <select
+            id="selectProjectUser"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            value={selectedProject}
+            onChange={(e) => {
+              setSelectedProject(e.target.value);
+              setSelectedParentTask(''); // Reset parent task when project changes
+            }}
+            required
+            disabled={isLoading || projects.length === 0}
+          >
+            <option value="">Select a Project</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+          {projects.length === 0 && <p className="text-sm text-gray-500 mt-1">No projects available. Admin needs to create projects first.</p>}
+        </div>
+
+        <div className="mb-4">
+          <label htmlFor="selectedParentTaskUser" className="block text-gray-700 text-sm font-bold mb-2">
+            Parent Task (Optional, for Sub-tasks)
+          </label>
+          <select
+            id="selectedParentTaskUser"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            value={selectedParentTask}
+            onChange={(e) => setSelectedParentTask(e.target.value)}
+            disabled={isLoading || !selectedProject || availableParentTasks.length === 0}
+          >
+            <option value="">No Parent Task (This is a main task)</option>
+            {availableParentTasks.map((task) => (
+              <option key={task.id} value={task.id}>
+                {task.name}
+              </option>
+            ))}
+          </select>
+          {!selectedProject && <p className="text-sm text-gray-500 mt-1">Select a project to see available parent tasks.</p>}
+          {selectedProject && availableParentTasks.length === 0 && <p className="text-sm text-gray-500 mt-1">No main tasks assigned to you under this project that can be parents.</p>}
+        </div>
+
+        <div className="mb-4">
+          <label htmlFor="newTaskNameUser" className="block text-gray-700 text-sm font-bold mb-2">
+            Task/Subtask Name
+          </label>
+          <input
+            type="text"
+            id="newTaskNameUser"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            value={newTaskName}
+            onChange={(e) => setNewTaskName(e.target.value)}
+            placeholder={selectedParentTask ? "e.g., Implement login button" : "e.g., Develop user authentication"}
+            required
+            disabled={isLoading}
+          />
+        </div>
+        <div className="mb-4">
+          <label htmlFor="newTaskDescriptionUser" className="block text-gray-700 text-sm font-bold mb-2">
+            Description
+          </label>
+          <textarea
+            id="newTaskDescriptionUser"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            value={newTaskDescription}
+            onChange={(e) => setNewTaskDescription(e.target.value)}
+            placeholder="Detailed description of your task or subtask"
+            rows="3"
+            disabled={isLoading}
+          ></textarea>
+        </div>
+        <div className="mb-4">
+          <label htmlFor="newTaskDueDateUser" className="block text-gray-700 text-sm font-bold mb-2">
+            Due Date (Optional)
+          </label>
+          <input
+            type="date"
+            id="newTaskDueDateUser"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            value={newTaskDueDate}
+            onChange={(e) => setNewTaskDueDate(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        <button
+          type="submit"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
+          disabled={isLoading || !selectedProject || !newTaskName.trim()}
+        >
+          {isLoading ? 'Creating...' : 'Create My Task'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+
 // --- DASHBOARD COMPONENTS (DEFINED AFTER THEIR CHILDREN) ---
 
 // User Dashboard Component
@@ -2486,6 +2966,16 @@ function UserDashboard({ userId, openConfirmModal }) {
         </button>
         <button
           className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+            activeTab === 'my-tasks' // NEW TAB
+              ? 'bg-indigo-200 text-indigo-800 border-b-4 border-indigo-500'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('my-tasks')}
+        >
+          My Tasks
+        </button>
+        <button
+          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
             activeTab === 'calendar'
               ? 'bg-orange-200 text-orange-800 border-b-4 border-orange-500'
               : 'text-gray-600 hover:bg-gray-100'
@@ -2500,6 +2990,8 @@ function UserDashboard({ userId, openConfirmModal }) {
         <TimesheetEntry userId={userId} openConfirmModal={openConfirmModal} />
       ) : activeTab === 'leave' ? (
         <LeaveRequest userId={userId} openConfirmModal={openConfirmModal} />
+      ) : activeTab === 'my-tasks' ? ( // RENDER NEW COMPONENT
+        <UserTaskManagement userId={userId} openConfirmModal={openConfirmModal} />
       ) : (
         <CalendarView userId={userId} userRole="user" />
       )}
@@ -2717,7 +3209,8 @@ function App() {
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/logout/`, {
         method: 'POST',
-        body: JSON.stringify({ refresh_token: refreshToken }),
+        headers: { 'Content-Type': 'application/json' }, // Ensure content type is set
+        body: JSON.stringify({ refresh: refreshToken }), // Changed refresh_token to refresh
       });
 
       if (response.ok) {
