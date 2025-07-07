@@ -1152,20 +1152,6 @@ function UserManagement({ userId, openConfirmModal }) {
           />
         </div>
         <div className="mb-4">
-          <label htmlFor="newEmail" className="block text-gray-700 text-sm font-bold mb-2">
-            Email
-          </label>
-          <input
-            type="email"
-            id="newEmail"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200"
-            value={newEmail}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            disabled={isLoading}
-          />
-        </div>
-        <div className="mb-4">
           <label htmlFor="newPassword" className="block text-gray-700 text-sm font-bold mb-2">
             Password
           </label>
