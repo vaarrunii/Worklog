@@ -1,20 +1,21 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import Calendar from 'react-calendar'; // Assuming react-calendar is available or can be added
-import 'react-calendar/dist/Calendar.css'; // Default styles for react-calendar
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import Calendar from 'react-calendar';
+import 'react-calendar/dist/Calendar.css';
 
 // Define your Django API base URL
-const API_BASE_URL = 'http://127.0.0.1:8000/api';
+// IMPORTANT: Adjust this port to match the port your Django backend is running on (e.g., 8000 or 8001)
+const API_BASE_URL = 'http://127.0.0.1:8001/api'; 
 
 // Helper function to make authenticated API calls with JWT token
 async function authenticatedFetch(url, options = {}) {
-  const token = localStorage.getItem('access_token'); // Get token from local storage
+  const token = localStorage.getItem('access_token');
   const headers = {
     'Content-Type': 'application/json',
-    ...options.headers, // Allow overriding or adding more headers
+    ...options.headers,
   };
 
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`; // Add Authorization header
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
   const response = await fetch(url, {
@@ -38,6 +39,8 @@ async function authenticatedFetch(url, options = {}) {
           const data = await refreshResponse.json();
           localStorage.setItem('access_token', data.access);
           localStorage.setItem('refresh_token', data.refresh);
+          localStorage.setItem('user_role', data.is_admin ? 'admin' : 'user');
+          localStorage.setItem('user_id', data.user_id);
 
           const retryOptions = { ...options, _isRetry: true };
           return authenticatedFetch(url, retryOptions);
@@ -45,22 +48,54 @@ async function authenticatedFetch(url, options = {}) {
           console.error('Failed to refresh token. Logging out.');
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
-          window.location.reload();
+          localStorage.removeItem('user_role');
+          localStorage.removeItem('user_id');
+          window.location.reload(); // Force a reload to clear state and redirect to login
           return response;
         }
       } catch (refreshError) {
         console.error('Network error during token refresh:', refreshError);
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
-        window.location.reload();
+        localStorage.removeItem('user_role');
+        localStorage.removeItem('user_id');
+        window.location.reload(); // Force a reload to clear state and redirect to login
         return response;
       }
+    } else {
+      console.warn('No refresh token available. Logging out.');
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('user_role');
+      localStorage.removeItem('user_id');
+      window.location.reload(); // Force a reload to clear state and redirect to login
+      return response;
     }
   }
 
   return response;
 }
 
+// Helper to get dates for a week starting from a given date (Monday is day 0)
+const getWeekDates = (startDate) => {
+  const dates = [];
+  const startOfWeek = new Date(startDate);
+  const dayOfWeek = startOfWeek.getDay();
+  const diff = startOfWeek.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust to Monday start
+  startOfWeek.setDate(diff);
+
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(startOfWeek);
+    date.setDate(startOfWeek.getDate() + i);
+    dates.push(date);
+  }
+  return dates;
+};
+
+// Helper to format date as YYYY-MM-DD
+const formatDate = (date) => date.toISOString().split('T')[0];
+
+// --- CORE COMPONENTS (DEFINED FIRST AS THEY ARE CHILDREN) ---
 
 // Generic Confirmation Modal Component
 function ConfirmationModal({ isOpen, message, onConfirm, onCancel }) {
@@ -89,208 +124,21 @@ function ConfirmationModal({ isOpen, message, onConfirm, onCancel }) {
   );
 }
 
-
-// Main App Component
-function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userRole, setUserRole] = useState(null); // 'admin' or 'user'
-  const [userId, setUserId] = useState(null); // Actual user ID from Django
-  const [isLoading, setIsLoading] = useState(true); // Loading state for initial auth check
-  const [showRegisterForm, setShowRegisterForm] = useState(false); // State to toggle between Login and Register
-
-  // Confirmation modal state
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [confirmModalMessage, setConfirmModalMessage] = useState('');
-  const [confirmModalAction, setConfirmModalAction] = useState(null);
-
-  const openConfirmModal = (message, action) => {
-    setConfirmModalMessage(message);
-    setConfirmModalAction(() => action); // Use a function to store the action
-    setShowConfirmModal(true);
-  };
-
-  const closeConfirmModal = () => {
-    setShowConfirmModal(false);
-    setConfirmModalMessage('');
-    setConfirmModalAction(null);
-  };
-
-  const handleConfirm = () => {
-    if (confirmModalAction) {
-      confirmModalAction();
-    }
-    closeConfirmModal();
-  };
-
-
-  // Check login status on app load (e.g., if token exists)
-  useEffect(() => {
-    const checkAuthStatus = async () => {
-      const token = localStorage.getItem('access_token');
-      if (!token) {
-        setIsLoggedIn(false);
-        setUserRole(null);
-        setUserId(null);
-        setIsLoading(false);
-        return;
-      }
-
-      try {
-        const response = await authenticatedFetch(`${API_BASE_URL}/current-user/`, {
-          method: 'GET',
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setIsLoggedIn(true);
-          setUserRole(data.is_staff ? 'admin' : 'user');
-          setUserId(data.id);
-        } else {
-          // Token might be expired or invalid, clear it
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          setIsLoggedIn(false);
-          setUserRole(null);
-          setUserId(null);
-        }
-      } catch (error) {
-        console.error('Failed to check auth status:', error);
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        setIsLoggedIn(false);
-        setUserRole(null);
-        setUserId(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    checkAuthStatus();
-  }, []);
-
-
-  // Handle Login
-  const handleLogin = async (username, password) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/login/`, { // Use plain fetch for login to get tokens
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-        credentials: 'include', // Still include for Django session if needed for admin
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('access_token', data.access_token);
-        localStorage.setItem('refresh_token', data.refresh_token);
-        setIsLoggedIn(true);
-        setUserRole(data.is_admin ? 'admin' : 'user');
-        setUserId(data.user_id);
-        setShowRegisterForm(false);
-        console.log('Logged in successfully!');
-      } else {
-        const errorData = await response.json();
-        alert(`Login failed: ${errorData.message || 'Invalid credentials'}`);
-      }
-    } catch (error) {
-      console.error('Login error:', error);
-      alert('An error occurred during login. Please check your network and try again.');
-    }
-  };
-
-  // Handle Logout
-  const handleLogout = async () => {
-    try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/logout/`, {
-        method: 'POST',
-        body: JSON.stringify({ refresh_token: localStorage.getItem('refresh_token') }), // Send refresh token to blacklist if implemented
-      });
-
-      if (response.ok) {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        setIsLoggedIn(false);
-        setUserRole(null);
-        setUserId(null);
-        console.log('Logged out successfully!');
-      } else {
-        const errorData = await response.json();
-        console.error('Logout failed:', errorData);
-        alert(`Logout failed: ${errorData.detail || 'Please try again.'}`);
-      }
-    } catch (error) {
-      console.error('Logout error:', error);
-      alert('An error occurred during logout.');
-    }
-  };
-
-  // Handle successful registration
-  const handleRegisterSuccess = () => {
-    setShowRegisterForm(false); // Go back to login form after successful registration
-    alert('Registration successful! Please log in with your new account.');
-  };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100">
-        <div className="text-xl text-gray-700">Loading WorkLog...</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100 font-inter flex flex-col items-center justify-center p-4">
-      <header className="w-full max-w-4xl bg-white bg-opacity-80 backdrop-blur-sm rounded-xl shadow-lg p-6 mb-8 flex justify-between items-center">
-        <h1 className="text-4xl font-bold text-gray-800">WorkLog</h1>
-        {isLoggedIn && (
-          <button
-            onClick={handleLogout}
-            className="px-6 py-3 bg-red-500 text-white font-semibold rounded-lg shadow-md hover:bg-red-600 transition duration-300 ease-in-out"
-          >
-            Logout
-          </button>
-        )}
-      </header>
-
-      <main className="w-full max-w-4xl bg-white bg-opacity-90 backdrop-blur-sm rounded-xl shadow-lg p-8">
-        {!isLoggedIn ? (
-          showRegisterForm ? (
-            <Register onRegisterSuccess={handleRegisterSuccess} onGoToLogin={() => setShowRegisterForm(false)} />
-          ) : (
-            <Login onLogin={handleLogin} onGoToRegister={() => setShowRegisterForm(true)} />
-          )
-        ) : userRole === 'admin' ? (
-          <AdminDashboard userId={userId} openConfirmModal={openConfirmModal} />
-        ) : (
-          <UserDashboard userId={userId} openConfirmModal={openConfirmModal} />
-        )}
-      </main>
-
-      <footer className="w-full max-w-4xl text-center text-gray-600 mt-8">
-        <p>&copy; {new Date().getFullYear()} WorkLog. All rights reserved.</p>
-      </footer>
-
-      <ConfirmationModal
-        isOpen={showConfirmModal}
-        message={confirmModalMessage}
-        onConfirm={handleConfirm}
-        onCancel={closeConfirmModal}
-      />
-    </div>
-  );
-}
-
-// Login Component (Updated to include a link to Register)
-function Login({ onLogin, onGoToRegister }) {
+// Login Component (Regular User Login)
+function Login({ onLogin, onGoToRegister, onGoToAdminLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onLogin(username, password);
+    setIsLoading(true);
+    onLogin(username, password).finally(() => setIsLoading(false));
   };
 
   return (
     <div className="flex flex-col items-center justify-center p-8">
-      <h2 className="text-3xl font-semibold text-gray-700 mb-6">Login to WorkLog</h2>
+      <h2 className="text-3xl font-semibold text-gray-700 mb-6">Login to WorkLog (User)</h2>
       <form onSubmit={handleSubmit} className="w-full max-w-sm bg-white p-8 rounded-lg shadow-md border border-gray-200">
         <div className="mb-5">
           <label htmlFor="username" className="block text-gray-700 text-sm font-bold mb-2">
@@ -304,6 +152,7 @@ function Login({ onLogin, onGoToRegister }) {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
+            disabled={isLoading}
           />
         </div>
         <div className="mb-6">
@@ -318,21 +167,32 @@ function Login({ onLogin, onGoToRegister }) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            disabled={isLoading}
           />
         </div>
         <div className="flex flex-col items-center justify-between gap-4">
           <button
             type="submit"
             className="w-full bg-gradient-to-r from-blue-400 to-purple-500 hover:from-blue-500 hover:to-purple-600 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline shadow-md transform hover:scale-105 transition duration-300 ease-in-out"
+            disabled={isLoading}
           >
-            Sign In
+            {isLoading ? 'Signing In...' : 'Sign In'}
           </button>
           <button
             type="button"
             onClick={onGoToRegister}
             className="w-full text-blue-600 hover:text-blue-800 text-sm font-semibold transition duration-300 ease-in-out"
+            disabled={isLoading}
           >
             Don't have an account? Register here.
+          </button>
+          <button
+            type="button"
+            onClick={onGoToAdminLogin}
+            className="w-full text-purple-600 hover:text-purple-800 text-sm font-semibold mt-2 transition duration-300 ease-in-out"
+            disabled={isLoading}
+          >
+            Are you an Admin? Login here.
           </button>
         </div>
       </form>
@@ -340,7 +200,77 @@ function Login({ onLogin, onGoToRegister }) {
   );
 }
 
-// New Register Component
+// Admin Login Component (Separate UI for Admin Login)
+function AdminLogin({ onLogin, onGoToRegularLogin }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    // The onLogin function will handle checking for is_admin
+    onLogin(username, password).finally(() => setIsLoading(false));
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center p-8">
+      <h2 className="text-3xl font-semibold text-gray-700 mb-6">Login to WorkLog (Admin)</h2>
+      <form onSubmit={handleSubmit} className="w-full max-w-sm bg-white p-8 rounded-lg shadow-md border border-gray-200">
+        <div className="mb-5">
+          <label htmlFor="adminUsername" className="block text-gray-700 text-sm font-bold mb-2">
+            Admin Username
+          </label>
+          <input
+            type="text"
+            id="adminUsername"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-transparent transition duration-200"
+            placeholder="Enter admin username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            disabled={isLoading}
+          />
+        </div>
+        <div className="mb-6">
+          <label htmlFor="adminPassword" className="block text-gray-700 text-sm font-bold mb-2">
+            Admin Password
+          </label>
+          <input
+            type="password"
+            id="adminPassword"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-transparent transition duration-200"
+            placeholder="********"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            disabled={isLoading}
+          />
+        </div>
+        <div className="flex flex-col items-center justify-between gap-4">
+          <button
+            type="submit"
+            className="w-full bg-gradient-to-r from-purple-400 to-indigo-500 hover:from-purple-500 hover:to-indigo-600 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline shadow-md transform hover:scale-105 transition duration-300 ease-in-out"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Signing In...' : 'Sign In as Admin'}
+          </button>
+          <button
+            type="button"
+            onClick={onGoToRegularLogin}
+            className="w-full text-blue-600 hover:text-blue-800 text-sm font-semibold mt-2 transition duration-300 ease-in-out"
+            disabled={isLoading}
+          >
+            Not an Admin? Go back to User Login.
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+
+// Register Component
 function Register({ onRegisterSuccess, onGoToLogin }) {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -480,104 +410,15 @@ function Register({ onRegisterSuccess, onGoToLogin }) {
   );
 }
 
-
-// Admin Dashboard Component (Updated with new tab for User Management, Reporting, Calendar)
-function AdminDashboard({ userId, openConfirmModal }) {
-  const [activeTab, setActiveTab] = useState('projects'); // 'projects', 'tasks', 'users', 'leave-approval', 'reporting', 'calendar'
-
-  return (
-    <div className="p-6">
-      <h2 className="text-3xl font-semibold text-gray-700 mb-6">Admin Dashboard</h2>
-      <div className="flex flex-wrap border-b border-gray-200 mb-6">
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'projects'
-              ? 'bg-blue-200 text-blue-800 border-b-4 border-blue-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('projects')}
-        >
-          Project Management
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'tasks'
-              ? 'bg-green-200 text-green-800 border-b-4 border-green-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('tasks')}
-        >
-          Task Assignment
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'users'
-              ? 'bg-purple-200 text-purple-800 border-b-4 border-purple-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('users')}
-        >
-          User Management
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'leave-approval'
-              ? 'bg-red-200 text-red-800 border-b-4 border-red-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('leave-approval')}
-        >
-          Leave Approval
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'reporting'
-              ? 'bg-teal-200 text-teal-800 border-b-4 border-teal-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('reporting')}
-        >
-          Reporting
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'calendar'
-              ? 'bg-orange-200 text-orange-800 border-b-4 border-orange-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('calendar')}
-        >
-          Calendar View
-        </button>
-      </div>
-
-      {activeTab === 'projects' ? (
-        <ProjectManagement userId={userId} openConfirmModal={openConfirmModal} />
-      ) : activeTab === 'tasks' ? (
-        <TaskAssignment userId={userId} openConfirmModal={openConfirmModal} />
-      ) : activeTab === 'users' ? (
-        <UserManagement userId={userId} openConfirmModal={openConfirmModal} />
-      ) : activeTab === 'leave-approval' ? (
-        <LeaveApproval userId={userId} openConfirmModal={openConfirmModal} />
-      ) : activeTab === 'reporting' ? (
-        <Reporting userId={userId} />
-      ) : (
-        <CalendarView userId={userId} userRole="admin" />
-      )}
-    </div>
-  );
-}
-
-// Project Management Component (Admin) - Fetches and Posts to Django
+// Project Management Component (Admin)
 function ProjectManagement({ userId, openConfirmModal }) {
   const [projects, setProjects] = useState([]);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDescription, setNewProjectDescription] = useState('');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [editingProject, setEditingProject] = useState(null); // State for editing
+  const [editingProject, setEditingProject] = useState(null);
 
-  // Fetch projects from Django backend
   const fetchProjects = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -596,7 +437,7 @@ function ProjectManagement({ userId, openConfirmModal }) {
       setMessage('Network error while fetching projects.');
     } finally {
       setIsLoading(false);
-      setTimeout(() => setMessage(''), 5000); // Clear message after 5 seconds
+      setTimeout(() => setMessage(''), 5000);
     }
   }, []);
 
@@ -623,7 +464,7 @@ function ProjectManagement({ userId, openConfirmModal }) {
         setMessage('Project added successfully!');
         setNewProjectName('');
         setNewProjectDescription('');
-        fetchProjects(); // Re-fetch to get updated list
+        fetchProjects();
       } else {
         const errorData = await response.json();
         setMessage(`Failed to add project: ${errorData.name || errorData.detail || 'Unknown error'}`);
@@ -654,7 +495,7 @@ function ProjectManagement({ userId, openConfirmModal }) {
     setIsLoading(true);
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/projects/${editingProject.id}/`, {
-        method: 'PUT', // or 'PATCH' for partial updates
+        method: 'PUT',
         body: JSON.stringify({ name: newProjectName, description: newProjectDescription }),
       });
 
@@ -701,7 +542,6 @@ function ProjectManagement({ userId, openConfirmModal }) {
       }
     });
   };
-
 
   return (
     <div className="p-4 bg-white rounded-lg shadow-inner">
@@ -798,11 +638,11 @@ function ProjectManagement({ userId, openConfirmModal }) {
   );
 }
 
-// Task Assignment Component (Admin) - Fetches from Django, Posts to Django
+// Task Assignment Component (Admin)
 function TaskAssignment({ userId, openConfirmModal }) {
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
-  const [tasks, setTasks] = useState([]); // State to hold all tasks for display
+  const [tasks, setTasks] = useState([]);
   const [selectedProject, setSelectedProject] = useState('');
   const [newTaskName, setNewTaskName] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
@@ -810,16 +650,15 @@ function TaskAssignment({ userId, openConfirmModal }) {
   const [assignedToUser, setAssignedToUser] = useState('');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [editingTask, setEditingTask] = useState(null); // State for editing
+  const [editingTask, setEditingTask] = useState(null);
 
-  // Fetch projects, users, and tasks from Django backend
   const fetchInitialData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [projectsResponse, usersResponse, tasksResponse] = await Promise.all([
         authenticatedFetch(`${API_BASE_URL}/projects/`, { method: 'GET' }),
         authenticatedFetch(`${API_BASE_URL}/users/`, { method: 'GET' }),
-        authenticatedFetch(`${API_BASE_URL}/tasks/`, { method: 'GET' }), // Fetch all tasks for admin
+        authenticatedFetch(`${API_BASE_URL}/tasks/`, { method: 'GET' }),
       ]);
 
       if (projectsResponse.ok) {
@@ -879,7 +718,7 @@ function TaskAssignment({ userId, openConfirmModal }) {
           name: newTaskName,
           description: newTaskDescription,
           assigned_to: assignedToUser,
-          due_date: newTaskDueDate || null, // Send null if empty
+          due_date: newTaskDueDate || null,
         }),
       });
 
@@ -888,7 +727,7 @@ function TaskAssignment({ userId, openConfirmModal }) {
         setNewTaskName('');
         setNewTaskDescription('');
         setNewTaskDueDate('');
-        fetchInitialData(); // Re-fetch all data to update lists
+        fetchInitialData();
       } else {
         const errorData = await response.json();
         setMessage(`Failed to assign task: ${errorData.name || errorData.detail || 'Unknown error'}`);
@@ -922,15 +761,15 @@ function TaskAssignment({ userId, openConfirmModal }) {
     setIsLoading(true);
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/tasks/${editingTask.id}/`, {
-        method: 'PUT', // or 'PATCH'
+        method: 'PUT',
         body: JSON.stringify({
           project: selectedProject,
           name: newTaskName,
           description: newTaskDescription,
           assigned_to: assignedToUser,
           due_date: newTaskDueDate || null,
-          status: editingTask.status, // Preserve current status
-          progress: editingTask.progress, // Preserve current progress
+          status: editingTask.status,
+          progress: editingTask.progress,
         }),
       });
 
@@ -1137,7 +976,7 @@ function TaskAssignment({ userId, openConfirmModal }) {
   );
 }
 
-// New User Management Component (Admin)
+// User Management Component (Admin)
 function UserManagement({ userId, openConfirmModal }) {
   const [users, setUsers] = useState([]);
   const [message, setMessage] = useState('');
@@ -1147,7 +986,7 @@ function UserManagement({ userId, openConfirmModal }) {
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newConfirmPassword, setNewConfirmPassword] = useState('');
-  const [isNewUserStaff, setIsNewUserStaff] = useState(false); // For creating admin users
+  const [isNewUserStaff, setIsNewUserStaff] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
@@ -1190,7 +1029,7 @@ function UserManagement({ userId, openConfirmModal }) {
     setMessage('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/users/`, { // Using plain fetch for user creation
+      const response = await fetch(`${API_BASE_URL}/users/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: newUsername, email: newEmail, password: newPassword, is_staff: isNewUserStaff }),
@@ -1203,7 +1042,7 @@ function UserManagement({ userId, openConfirmModal }) {
         setNewPassword('');
         setNewConfirmPassword('');
         setIsNewUserStaff(false);
-        fetchUsers(); // Re-fetch to update the user list
+        fetchUsers();
       } else {
         const errorData = await response.json();
         if (errorData.username) {
@@ -1235,7 +1074,6 @@ function UserManagement({ userId, openConfirmModal }) {
         </div>
       )}
 
-      {/* Create New User Form */}
       <form onSubmit={handleCreateUser} className="mb-8 bg-purple-50 p-6 rounded-lg shadow-sm border border-purple-100">
         <h4 className="text-xl font-medium text-gray-700 mb-4">Create New User</h4>
         <div className="mb-4">
@@ -1316,7 +1154,6 @@ function UserManagement({ userId, openConfirmModal }) {
         </button>
       </form>
 
-      {/* List of Existing Users */}
       <h4 className="text-xl font-medium text-gray-700 mb-3">Existing Users</h4>
       {isLoading && users.length === 0 ? (
         <p className="text-gray-500">Loading users...</p>
@@ -1330,7 +1167,6 @@ function UserManagement({ userId, openConfirmModal }) {
                 <p className="font-semibold text-lg text-purple-800">{user.username} {user.is_staff && <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-200 text-purple-800">Admin</span>}</p>
                 <p className="text-gray-600 text-sm">{user.email}</p>
               </div>
-              {/* Add edit/delete/deactivate buttons here in a real app */}
             </li>
           ))}
         </ul>
@@ -1339,7 +1175,7 @@ function UserManagement({ userId, openConfirmModal }) {
   );
 }
 
-// New Leave Approval Component (Admin)
+// Leave Approval Component (Admin)
 function LeaveApproval({ userId, openConfirmModal }) {
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [message, setMessage] = useState('');
@@ -1348,7 +1184,6 @@ function LeaveApproval({ userId, openConfirmModal }) {
   const fetchLeaveRequests = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Admin should fetch all leave requests
       const response = await authenticatedFetch(`${API_BASE_URL}/leave-requests/`, {
         method: 'GET',
       });
@@ -1376,13 +1211,13 @@ function LeaveApproval({ userId, openConfirmModal }) {
     setIsLoading(true);
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/leave-requests/${requestId}/`, {
-        method: 'PATCH', // Use PATCH for partial update
+        method: 'PATCH',
         body: JSON.stringify({ status: newStatus, admin_comments: adminComments }),
       });
 
       if (response.ok) {
         setMessage(`Leave request ${newStatus} successfully!`);
-        fetchLeaveRequests(); // Re-fetch to update the list
+        fetchLeaveRequests();
       } else {
         const errorData = await response.json();
         setMessage(`Failed to update leave request: ${errorData.detail || 'Unknown error'}`);
@@ -1483,7 +1318,7 @@ function LeaveApproval({ userId, openConfirmModal }) {
   );
 }
 
-// New Reporting Component (Admin)
+// Reporting Component (Admin)
 function Reporting({ userId }) {
   const [timesheetEntries, setTimesheetEntries] = useState([]);
   const [users, setUsers] = useState([]);
@@ -1531,12 +1366,7 @@ function Reporting({ userId }) {
     fetchReportingData();
   }, [fetchReportingData]);
 
-  useEffect(() => {
-    // Generate report whenever filters or data change
-    generateReport();
-  }, [timesheetEntries, selectedUser, selectedProject, users, projects]);
-
-  const generateReport = () => {
+  const generateReport = useCallback(() => {
     let filteredEntries = timesheetEntries;
 
     if (selectedUser) {
@@ -1561,7 +1391,11 @@ function Reporting({ userId }) {
       totalHoursByUser,
       totalHoursByProject,
     });
-  };
+  }, [timesheetEntries, selectedUser, selectedProject, users, projects]);
+
+  useEffect(() => {
+    generateReport();
+  }, [timesheetEntries, selectedUser, selectedProject, users, projects, generateReport]);
 
   return (
     <div className="p-4 bg-white rounded-lg shadow-inner">
@@ -1628,7 +1462,7 @@ function Reporting({ userId }) {
                     <span>{user}:</span>
                     <span className="font-semibold">{hours.toFixed(2)} hours</span>
                   </li>
-                ))}
+                  ))}
               </ul>
             )}
           </div>
@@ -1654,107 +1488,256 @@ function Reporting({ userId }) {
   );
 }
 
-// User Dashboard Component (Updated with new tab for Calendar)
-function UserDashboard({ userId, openConfirmModal }) {
-  const [activeTab, setActiveTab] = useState('timesheets'); // 'timesheets', 'leave', or 'calendar'
+// Calendar View Component
+function CalendarView({ userId, userRole }) {
+  const [date, setDate] = useState(new Date());
+  const [events, setEvents] = useState([]);
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchCalendarEvents = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      let tasksUrl = `${API_BASE_URL}/tasks/`;
+      let leaveUrl = `${API_BASE_URL}/leave-requests/`;
+
+      if (userRole === 'user') {
+        tasksUrl += `?assigned_to=${userId}`;
+        leaveUrl += `?user=${userId}`;
+      }
+
+      const [tasksResponse, leaveResponse] = await Promise.all([
+        authenticatedFetch(tasksUrl, { method: 'GET' }),
+        authenticatedFetch(leaveUrl, { method: 'GET' }),
+      ]);
+
+      let fetchedEvents = [];
+
+      if (tasksResponse.ok) {
+        const tasksData = await tasksResponse.json();
+        tasksData.forEach(task => {
+          if (task.due_date) {
+            fetchedEvents.push({
+              id: `task-${task.id}`,
+              type: 'task',
+              title: task.name,
+              date: new Date(task.due_date),
+              status: task.status,
+              description: task.description,
+              project_name: task.project_name,
+              assigned_to_username: task.assigned_to_username,
+            });
+          }
+        });
+      } else {
+        setMessage(`Failed to fetch tasks for calendar: ${tasksResponse.statusText}`);
+      }
+
+      if (leaveResponse.ok) {
+        const leaveData = await leaveResponse.json();
+        leaveData.forEach(request => {
+          if (request.is_hourly) {
+            fetchedEvents.push({
+              id: `leave-${request.id}-${request.start_date}`,
+              type: 'leave',
+              title: `${request.user_username || 'Your'} Leave (${request.leave_type})`,
+              date: new Date(request.start_date),
+              status: request.status,
+              reason: request.reason,
+              is_hourly: true,
+              start_time: request.start_time,
+              end_time: request.end_time,
+            });
+          } else {
+            let currentDate = new Date(request.start_date);
+            const endDate = new Date(request.end_date);
+            while (currentDate <= endDate) {
+              fetchedEvents.push({
+                id: `leave-${request.id}-${currentDate.toISOString().split('T')[0]}`,
+                type: 'leave',
+                title: `${request.user_username || 'Your'} Leave (${request.leave_type})`,
+                date: new Date(currentDate),
+                status: request.status,
+                reason: request.reason,
+                is_hourly: false,
+              });
+              currentDate.setDate(currentDate.getDate() + 1);
+            }
+          }
+        });
+      } else {
+        setMessage(`Failed to fetch leave requests for calendar: ${leaveResponse.statusText}`);
+      }
+
+      setEvents(fetchedEvents);
+
+    } catch (error) {
+      console.error('Error fetching calendar events:', error);
+      setMessage('Network error while fetching calendar events.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  }, [userId, userRole]);
+
+  useEffect(() => {
+    if (userId) {
+      fetchCalendarEvents();
+    }
+  }, [userId, fetchCalendarEvents]);
+
+  const tileContent = ({ date, view }) => {
+    if (view === 'month') {
+      const dayEvents = events.filter(event =>
+        event.date.toDateString() === date.toDateString()
+      );
+
+      return (
+        <div className="flex flex-col items-center justify-center text-xs">
+          {dayEvents.map(event => (
+            <div
+              key={event.id}
+              className={`w-full text-center rounded-sm mt-0.5 px-0.5 py-0.5
+                ${event.type === 'task' ?
+                  (event.status === 'completed' ? 'bg-green-200 text-green-800' : 'bg-blue-200 text-blue-800') :
+                  (event.status === 'approved' ? 'bg-pink-200 text-pink-800' : event.status === 'pending' ? 'bg-yellow-200 text-yellow-800' : 'bg-red-200 text-red-800')
+                }`}
+              title={`${event.title} (${event.type === 'task' ? `Status: ${event.status}` :
+                (event.is_hourly ? `Status: ${event.status}, ${event.start_time}-${event.end_time}, Reason: ${event.reason}` : `Status: ${event.status}, Reason: ${event.reason}`)
+              }`}
+            >
+              {event.title.split(' ')[0]}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
-    <div className="p-6">
-      <h2 className="text-3xl font-semibold text-gray-700 mb-6">User Dashboard</h2>
-      <div className="flex border-b border-gray-200 mb-6">
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'timesheets'
-              ? 'bg-yellow-200 text-yellow-800 border-b-4 border-yellow-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('timesheets')}
-        >
-          Timesheets
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'leave'
-              ? 'bg-pink-200 text-pink-800 border-b-4 border-pink-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('leave')}
-        >
-          Leave Requests
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'calendar'
-              ? 'bg-orange-200 text-orange-800 border-b-4 border-orange-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('calendar')}
-        >
-          Calendar View
-        </button>
+    <div className="p-4 bg-white rounded-lg shadow-inner">
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Calendar View</h3>
+      {message && (
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-orange-100 border border-orange-400 text-orange-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+          <span className="block sm:inline">{message}</span>
+        </div>
+      )}
+      <div className="flex justify-center mb-6">
+        <Calendar
+          onChange={setDate}
+          value={date}
+          tileContent={tileContent}
+          className="rounded-lg shadow-md border border-gray-200 p-4 w-full max-w-xl"
+        />
       </div>
 
-      {activeTab === 'timesheets' ? (
-        <TimesheetEntry userId={userId} openConfirmModal={openConfirmModal} />
-      ) : activeTab === 'leave' ? (
-        <LeaveRequest userId={userId} openConfirmModal={openConfirmModal} />
+      <h4 className="text-xl font-medium text-gray-700 mb-3">Events for {date.toDateString()}</h4>
+      {isLoading ? (
+        <p className="text-gray-500">Loading events...</p>
       ) : (
-        <CalendarView userId={userId} userRole="user" />
+        <ul className="space-y-3">
+          {events.filter(event => event.date.toDateString() === date.toDateString()).length === 0 ? (
+            <p className="text-gray-500">No events on this date.</p>
+          ) : (
+            events.filter(event => event.date.toDateString() === date.toDateString()).map(event => (
+              <li key={event.id} className={`p-3 rounded-lg shadow-sm border
+                ${event.type === 'task' ? 'bg-blue-50 border-blue-100' : 'bg-pink-50 border-pink-100'}`}>
+                <p className="font-semibold text-lg">
+                  {event.title}
+                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold
+                    ${event.type === 'task' ?
+                      (event.status === 'completed' ? 'bg-green-200 text-green-800' : 'bg-blue-200 text-blue-800') :
+                      (event.status === 'approved' ? 'bg-green-200 text-green-800' : event.status === 'pending' ? 'bg-yellow-200 text-yellow-800' : 'bg-red-200 text-red-800')
+                    }`}
+                  >
+                    {event.status}
+                  </span>
+                </p>
+                {event.type === 'task' && (
+                  <>
+                    <p className="text-gray-600 text-sm">Project: {event.project_name}</p>
+                    <p className="text-gray-600 text-sm">Assigned To: {event.assigned_to_username}</p>
+                    <p className="text-gray-600 text-sm">Description: {event.description}</p>
+                  </>
+                )}
+                {event.type === 'leave' && (
+                  <>
+                    {event.is_hourly && (
+                      <p className="text-gray-600 text-sm">Time: {event.start_time} - {event.end_time}</p>
+                    )}
+                    <p className="text-gray-600 text-sm">Reason: {event.reason}</p>
+                  </>
+                )}
+              </li>
+            ))
+          )}
+        </ul>
       )}
     </div>
   );
 }
 
-// Timesheet Entry Component (User) - Fetches and Posts to Django
+// Timesheet Entry Component (User) - Week View
 function TimesheetEntry({ userId, openConfirmModal }) {
-  const [tasks, setTasks] = useState([]);
-  const [selectedTask, setSelectedTask] = useState('');
-  const [date, setDate] = useState('');
-  const [hours, setHours] = useState('');
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+    return new Date(today.setDate(diff));
+  });
+  const [weekDates, setWeekDates] = useState([]);
+  const [timesheetEntriesMap, setTimesheetEntriesMap] = useState({});
+  const [userTasks, setUserTasks] = useState([]);
   const [message, setMessage] = useState('');
-  const [timesheetEntries, setTimesheetEntries] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [editingEntry, setEditingEntry] = useState(null); // State for editing
 
-  // Debugging log for TimesheetEntry component
-  useEffect(() => {
-    console.log('TimesheetEntry: isLoading is', isLoading);
-    console.log('TimesheetEntry: selectedTask is', selectedTask);
-    console.log('TimesheetEntry: date is', date);
-    console.log('TimesheetEntry: hours is', hours);
-  }, [isLoading, selectedTask, date, hours]);
+  const saveTimeoutRef = useRef(null);
 
-
-  // Fetch tasks assigned to the current user and their existing timesheet entries
-  const fetchTimesheetData = useCallback(async () => {
+  const fetchWeeklyTimesheets = useCallback(async (weekStartDate) => {
     setIsLoading(true);
+    setMessage('');
+    const dates = getWeekDates(weekStartDate);
+    setWeekDates(dates);
+
+    const startDateStr = formatDate(dates[0]);
+    const endDateStr = formatDate(dates[6]);
+
     try {
-      // Fetch tasks assigned to the current user
       const tasksResponse = await authenticatedFetch(`${API_BASE_URL}/tasks/?assigned_to=${userId}`, {
         method: 'GET',
       });
+      let fetchedTasks = [];
       if (tasksResponse.ok) {
-        const data = await tasksResponse.json();
-        setTasks(data);
-        if (data.length > 0) setSelectedTask(data[0].id);
+        fetchedTasks = await tasksResponse.json();
+        setUserTasks(fetchedTasks);
       } else {
         const errorData = await tasksResponse.json();
         setMessage(`Failed to fetch tasks: ${errorData.detail || 'Unknown error'}`);
       }
 
-      // Fetch existing timesheet entries for the current user
-      const entriesResponse = await authenticatedFetch(`${API_BASE_URL}/timesheets/?user=${userId}`, {
+      const entriesResponse = await authenticatedFetch(`${API_BASE_URL}/timesheets/?user=${userId}&start_date=${startDateStr}&end_date=${endDateStr}`, {
         method: 'GET',
       });
+      let fetchedEntries = [];
       if (entriesResponse.ok) {
-        const data = await entriesResponse.json();
-        setTimesheetEntries(data);
+        fetchedEntries = await entriesResponse.json();
       } else {
         const errorData = await entriesResponse.json();
         setMessage(`Failed to fetch timesheet entries: ${errorData.detail || 'Unknown error'}`);
       }
+
+      const newEntriesMap = {};
+      fetchedEntries.forEach(entry => {
+        if (!newEntriesMap[entry.task]) {
+          newEntriesMap[entry.task] = {};
+        }
+        newEntriesMap[entry.task][entry.date] = entry;
+      });
+      setTimesheetEntriesMap(newEntriesMap);
+
     } catch (error) {
-      console.error('Error fetching timesheet data:', error);
+      console.error('Error fetching weekly timesheet data:', error);
       setMessage('Network error while fetching timesheet data.');
     } finally {
       setIsLoading(false);
@@ -1763,293 +1746,275 @@ function TimesheetEntry({ userId, openConfirmModal }) {
   }, [userId]);
 
   useEffect(() => {
-    if (userId) { // Only fetch if userId is available
-      fetchTimesheetData();
+    if (userId) {
+      fetchWeeklyTimesheets(currentWeekStart);
     }
-  }, [userId, fetchTimesheetData]);
+  }, [userId, currentWeekStart, fetchWeeklyTimesheets]);
 
-  const handleSubmitTimesheet = async (e) => {
-    e.preventDefault();
-    if (!selectedTask || !date || hours <= 0) {
-      setMessage('Please fill all fields correctly (hours must be greater than 0).');
-      setTimeout(() => setMessage(''), 3000);
-      return;
+  const handleHoursChange = (taskId, dateString, hoursInput) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
 
-    setIsLoading(true);
-    const payload = {
-      task: selectedTask,
-      date: date,
-      hours: parseFloat(hours),
-      // user is automatically set by Django backend's perform_create
-    };
-    console.log('Timesheet Payload being sent:', payload); // Log the payload
-
-    try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/timesheets/`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-
-      if (response.ok) {
-        setMessage('Timesheet entry submitted successfully!');
-        setSelectedTask(tasks.length > 0 ? tasks[0].id : '');
-        setDate('');
-        setHours('');
-        fetchTimesheetData(); // Re-fetch to get updated list with proper task names etc.
-      } else {
-        let errorData = {};
-        try {
-          errorData = await response.json();
-        } catch (jsonError) {
-          console.error('Failed to parse error response as JSON:', jsonError);
-          errorData = { detail: response.statusText }; // Fallback to status text
-        }
-        console.error('Timesheet submission error response:', errorData); // Log the full error response
-        setMessage(`Failed to submit timesheet: ${errorData.non_field_errors || errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
+    const newHours = parseFloat(hoursInput) || 0;
+    setTimesheetEntriesMap(prevMap => {
+      const newMap = { ...prevMap };
+      if (!newMap[taskId]) {
+        newMap[taskId] = {};
       }
-    } catch (error) {
-      console.error('Error submitting timesheet:', error);
-      setMessage('Network error while submitting timesheet.');
-    } finally {
-      setIsLoading(false);
-      setTimeout(() => setMessage(''), 5000);
-    }
-  };
+      newMap[taskId][dateString] = {
+        ...newMap[taskId][dateString],
+        task: taskId,
+        date: dateString,
+        hours: newHours,
+        user: userId,
+      };
+      return newMap;
+    });
 
-  const handleEditTimesheet = (entry) => {
-    setEditingEntry(entry);
-    setSelectedTask(entry.task);
-    setDate(entry.date);
-    setHours(entry.hours);
-  };
+    saveTimeoutRef.current = setTimeout(async () => {
+      const entryToSave = timesheetEntriesMap[taskId]?.[dateString] || {
+        task: taskId,
+        date: dateString,
+        hours: newHours,
+        user: userId,
+      };
 
-  const handleUpdateTimesheet = async (e) => {
-    e.preventDefault();
-    if (!selectedTask || !date || hours <= 0) {
-      setMessage('Please fill all fields correctly (hours must be greater than 0).');
-      setTimeout(() => setMessage(''), 3000);
-      return;
-    }
-
-    setIsLoading(true);
-    const payload = {
-      task: selectedTask,
-      date: date,
-      hours: parseFloat(hours),
-    };
-    console.log('Timesheet Update Payload being sent:', payload); // Log the payload
-
-    try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/timesheets/${editingEntry.id}/`, {
-        method: 'PUT', // or 'PATCH'
-        body: JSON.stringify(payload),
-      });
-
-      if (response.ok) {
-        setMessage('Timesheet entry updated successfully!');
-        setEditingEntry(null);
-        setSelectedTask(tasks.length > 0 ? tasks[0].id : '');
-        setDate('');
-        setHours('');
-        fetchTimesheetData();
-      } else {
-        let errorData = {};
-        try {
-          errorData = await response.json();
-        } catch (jsonError) {
-          console.error('Failed to parse error response as JSON:', jsonError);
-          errorData = { detail: response.statusText }; // Fallback to status text
-        }
-        console.error('Timesheet update error response:', errorData); // Log the full error response
-        setMessage(`Failed to update timesheet: ${errorData.non_field_errors || errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
+      if (entryToSave.hours <= 0 && entryToSave.id) {
+        openConfirmModal('Hours are 0. Do you want to delete this timesheet entry?', async () => {
+          try {
+            const response = await authenticatedFetch(`${API_BASE_URL}/timesheets/${entryToSave.id}/`, {
+              method: 'DELETE',
+            });
+            if (response.ok) {
+              setMessage('Entry deleted successfully.');
+              fetchWeeklyTimesheets(currentWeekStart);
+            } else {
+              const errorData = await response.json();
+              setMessage(`Failed to delete entry: ${errorData.detail || 'Unknown error'}`);
+            }
+          } catch (error) {
+            setMessage('Network error deleting entry.');
+          }
+        });
+        return;
+      } else if (entryToSave.hours <= 0 && !entryToSave.id) {
+        return;
       }
-    } catch (error) {
-      console.error('Error updating timesheet:', error);
-      setMessage('Network error while updating timesheet.');
-    } finally {
-      setIsLoading(false);
-      setTimeout(() => setMessage(''), 5000);
-    }
-  };
 
-  const handleDeleteTimesheet = (entryId) => {
-    openConfirmModal('Are you sure you want to delete this timesheet entry? This action cannot be undone.', async () => {
       setIsLoading(true);
       try {
-        const response = await authenticatedFetch(`${API_BASE_URL}/timesheets/${entryId}/`, {
-          method: 'DELETE',
-        });
+        let response;
+        if (entryToSave.id) {
+          response = await authenticatedFetch(`${API_BASE_URL}/timesheets/${entryToSave.id}/`, {
+            method: 'PUT',
+            body: JSON.stringify(entryToSave),
+          });
+        } else {
+          response = await authenticatedFetch(`${API_BASE_URL}/timesheets/`, {
+            method: 'POST',
+            body: JSON.stringify(entryToSave),
+          });
+        }
 
         if (response.ok) {
-          setMessage('Timesheet entry deleted successfully!');
-          fetchTimesheetData();
+          const savedEntry = await response.json();
+          setMessage('Timesheet entry saved!');
+          setTimesheetEntriesMap(prevMap => {
+            const newMap = { ...prevMap };
+            if (!newMap[taskId]) {
+              newMap[taskId] = {};
+            }
+            newMap[taskId][dateString] = savedEntry;
+            return newMap;
+          });
         } else {
-          let errorData = {};
-          try {
-            errorData = await response.json();
-          } catch (jsonError) {
-            console.error('Failed to parse error response as JSON:', jsonError);
-            errorData = { detail: response.statusText }; // Fallback to status text
-          }
-          setMessage(`Failed to delete timesheet: ${errorData.detail || 'Unknown error'}`);
+          const errorData = await response.json();
+          setMessage(`Failed to save entry: ${errorData.non_field_errors || errorData.detail || 'Unknown error'}`);
         }
       } catch (error) {
-        console.error('Error deleting timesheet:', error);
-        setMessage('Network error while deleting timesheet.');
+        console.error('Error saving timesheet entry:', error);
+        setMessage('Network error while saving timesheet entry.');
       } finally {
         setIsLoading(false);
         setTimeout(() => setMessage(''), 5000);
       }
+    }, 1000);
+  };
+
+  const handlePreviousWeek = () => {
+    const newDate = new Date(currentWeekStart);
+    newDate.setDate(newDate.getDate() - 7);
+    setCurrentWeekStart(newDate);
+  };
+
+  const handleNextWeek = () => {
+    const newDate = new Date(currentWeekStart);
+    newDate.setDate(newDate.getDate() + 7);
+    setCurrentWeekStart(newDate);
+  };
+
+  const getWeekRangeString = () => {
+    if (weekDates.length === 0) return 'Loading Week...';
+    const start = weekDates[0];
+    const end = weekDates[6];
+    const options = { month: 'short', day: 'numeric' };
+    return `${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', options)}`;
+  };
+
+  const getDayName = (date) => {
+    const options = { weekday: 'short' };
+    return date.toLocaleDateString('en-US', options);
+  };
+
+  const getDailyTotal = (dateString) => {
+    let total = 0;
+    userTasks.forEach(task => {
+      const entry = timesheetEntriesMap[task.id]?.[dateString];
+      if (entry && entry.hours) {
+        total += parseFloat(entry.hours);
+      }
     });
+    return total.toFixed(2);
+  };
+
+  const getTaskRowTotal = (taskId) => {
+    let total = 0;
+    weekDates.forEach(date => {
+      const dateString = formatDate(date);
+      const entry = timesheetEntriesMap[taskId]?.[dateString];
+      if (entry && entry.hours) {
+        total += parseFloat(entry.hours);
+      }
+    });
+    return total.toFixed(2);
+  };
+
+  const getGrandTotal = () => {
+    let grandTotal = 0;
+    userTasks.forEach(task => {
+      grandTotal += parseFloat(getTaskRowTotal(task.id));
+    });
+    return grandTotal.toFixed(2);
   };
 
   return (
     <div className="p-4 bg-white rounded-lg shadow-inner">
-      <h3 className="text-2xl font-medium text-gray-700 mb-4">Submit Timesheet</h3>
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Timesheet Week View</h3>
       {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-yellow-100 border border-yellow-400 text-yellow-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') || message.includes('saved') ? 'bg-yellow-100 border border-yellow-400 text-yellow-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
           <span className="block sm:inline">{message}</span>
         </div>
       )}
-      <form onSubmit={editingEntry ? handleUpdateTimesheet : handleSubmitTimesheet} className="mb-6 bg-yellow-50 p-6 rounded-lg shadow-sm border border-yellow-100">
-        <h4 className="text-xl font-medium text-gray-700 mb-4">{editingEntry ? 'Edit Timesheet Entry' : 'New Timesheet Entry'}</h4>
-        <div className="mb-4">
-          <label htmlFor="taskSelect" className="block text-gray-700 text-sm font-bold mb-2">
-            Select Task
-          </label>
-          <select
-            id="taskSelect"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-yellow-200"
-            value={selectedTask}
-            onChange={(e) => setSelectedTask(e.target.value)}
-            required
-            disabled={isLoading || tasks.length === 0}
-          >
-            {tasks.length === 0 ? (
-              <option value="">No tasks assigned to you</option>
-            ) : (
-              tasks.map((task) => (
-                <option key={task.id} value={task.id}>
-                  {task.name} ({task.project_name})
-                </option>
-              ))
-            )}
-          </select>
-        </div>
-        <div className="mb-4">
-          <label htmlFor="date" className="block text-gray-700 text-sm font-bold mb-2">
-            Date
-          </label>
-          <input
-            type="date"
-            id="date"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-yellow-200"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            required
-            disabled={isLoading}
-          />
-        </div>
-        <div className="mb-4">
-          <label htmlFor="hours" className="block text-gray-700 text-sm font-bold mb-2">
-            Hours Worked
-          </label>
-          <input
-            type="number"
-            id="hours"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-yellow-200"
-            value={hours}
-            onChange={(e) => setHours(e.target.value)}
-            min="0.5"
-            step="0.5"
-            placeholder="e.g., 8"
-            required
-            disabled={isLoading}
-          />
-        </div>
-        <div className="flex space-x-4">
-          <button
-            type="submit"
-            className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
-            disabled={isLoading || tasks.length === 0}
-          >
-            {isLoading ? (editingEntry ? 'Updating...' : 'Submitting...') : (editingEntry ? 'Update Entry' : 'Submit Timesheet')}
-          </button>
-          {editingEntry && (
-            <button
-              type="button"
-              onClick={() => { setEditingEntry(null); setSelectedTask(tasks.length > 0 ? tasks[0].id : ''); setDate(''); setHours(''); }}
-              className="bg-gray-400 hover:bg-gray-500 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
-              disabled={isLoading}
-            >
-              Cancel Edit
-            </button>
-          )}
-        </div>
-      </form>
 
-      <h4 className="text-xl font-medium text-gray-700 mb-3">Your Timesheet Entries</h4>
-      {isLoading && timesheetEntries.length === 0 ? (
-        <p className="text-gray-500">Loading timesheet entries...</p>
-      ) : timesheetEntries.length === 0 ? (
-        <p className="text-gray-500">No timesheet entries yet. Submit one above!</p>
+      <div className="flex justify-between items-center mb-6 bg-gray-50 p-4 rounded-lg shadow-sm border border-gray-100">
+        <button
+          onClick={handlePreviousWeek}
+          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition duration-300"
+          disabled={isLoading}
+        >
+          &larr; Previous Week
+        </button>
+        <h4 className="text-xl font-semibold text-gray-800">{getWeekRangeString()}</h4>
+        <button
+          onClick={handleNextWeek}
+          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition duration-300"
+          disabled={isLoading}
+        >
+          Next Week &rarr;
+        </button>
+      </div>
+
+      {isLoading && userTasks.length === 0 && Object.keys(timesheetEntriesMap).length === 0 ? (
+        <p className="text-gray-500 text-center py-8">Loading timesheet data...</p>
+      ) : userTasks.length === 0 ? (
+        <p className="text-gray-500 text-center py-8">No tasks assigned to you for this week. Please check your assigned tasks or try a different week.</p>
       ) : (
-        <ul className="space-y-4">
-          {timesheetEntries.map((entry) => (
-            <li key={entry.id} className="bg-yellow-50 p-4 rounded-lg shadow-sm border border-yellow-100 flex flex-col sm:flex-row justify-between items-start sm:items-center">
-              <div className="mb-2 sm:mb-0">
-                <p className="font-semibold text-lg text-yellow-800">{entry.task_name} (Project: {entry.project_name})</p>
-                <p className="text-gray-600 text-sm">{entry.date} - {entry.hours} hours</p>
-              </div>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => handleEditTimesheet(entry)}
-                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition duration-300 text-sm"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDeleteTimesheet(entry.id)}
-                  className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 text-sm"
-                >
-                  Delete
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="overflow-x-auto relative shadow-md sm:rounded-lg">
+          <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+            <thead className="text-xs text-gray-700 uppercase bg-gray-200 dark:bg-gray-700 dark:text-gray-400">
+              <tr>
+                <th scope="col" className="py-3 px-6 min-w-[200px]">Task / Project</th>
+                <th scope="col" className="py-3 px-6 text-center">Status</th>
+                {weekDates.map((date, index) => (
+                  <th key={index} scope="col" className="py-3 px-6 text-center">
+                    {getDayName(date)}<br/>{date.getDate()}
+                  </th>
+                ))}
+                <th scope="col" className="py-3 px-6 text-center">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {userTasks.map(task => (
+                <tr key={task.id} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                  <th scope="row" className="py-4 px-6 font-medium text-gray-900 whitespace-nowrap dark:text-white">
+                    <p className="font-semibold text-base">{task.name}</p>
+                    <p className="text-xs text-gray-500">{task.project_name}</p>
+                  </th>
+                  <td className="py-4 px-6 text-center">
+                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                      task.status === 'completed' ? 'bg-green-200 text-green-800' :
+                      task.status === 'in_progress' ? 'bg-blue-200 text-blue-800' :
+                      'bg-yellow-200 text-yellow-800'
+                    }`}>
+                      {task.status === 'completed' ? 'Approved' : task.status.replace('_', ' ')}
+                    </span>
+                  </td>
+                  {weekDates.map((date, index) => {
+                    const dateString = formatDate(date);
+                    const entry = timesheetEntriesMap[task.id]?.[dateString];
+                    return (
+                      <td key={index} className="py-4 px-2 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={entry?.hours || ''}
+                          onChange={(e) => handleHoursChange(task.id, dateString, e.target.value)}
+                          className="w-20 p-2 border rounded-md text-center focus:ring-blue-300 focus:border-blue-300 transition duration-150"
+                          disabled={isLoading}
+                        />
+                      </td>
+                    );
+                  })}
+                  <td className="py-4 px-6 text-center font-bold text-gray-900 dark:text-white">
+                    {getTaskRowTotal(task.id)}
+                  </td>
+                </tr>
+              ))}
+              {/* Total Row */}
+              <tr className="bg-gray-200 dark:bg-gray-700 text-gray-700 uppercase font-bold">
+                <td className="py-3 px-6">Total</td>
+                <td className="py-3 px-6 text-center"></td>
+                {weekDates.map((date, index) => (
+                  <td key={index} className="py-3 px-6 text-center">
+                    {getDailyTotal(formatDate(date))}
+                  </td>
+                ))}
+                <td className="py-3 px-6 text-center">{getGrandTotal()}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 }
 
-// Leave Request Component (User) - Fetches and Posts to Django
+// Leave Request Component (User)
 function LeaveRequest({ userId, openConfirmModal }) {
   const [leaveType, setLeaveType] = useState('sick');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
-  const [isHourly, setIsHourly] = useState(false); // New state for hourly leave
-  const [startTime, setStartTime] = useState(''); // New state for start time
-  const [endTime, setEndTime] = useState('');     // New state for end time
+  const [isHourly, setIsHourly] = useState(false);
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [message, setMessage] = useState('');
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [editingRequest, setEditingRequest] = useState(null); // State for editing
+  const [editingRequest, setEditingRequest] = useState(null);
 
-  // Debugging logs for LeaveRequest component
-  useEffect(() => {
-    console.log('LeaveRequest: isLoading is', isLoading);
-    console.log('LeaveRequest: editingRequest is', editingRequest);
-    if (editingRequest) {
-      console.log('LeaveRequest: editingRequest status is', editingRequest.status);
-    }
-    console.log('LeaveRequest: isHourly is', isHourly);
-  }, [isLoading, editingRequest, isHourly]);
-
-
-  // Fetch existing leave requests for the current user
   const fetchLeaveRequests = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -2073,14 +2038,14 @@ function LeaveRequest({ userId, openConfirmModal }) {
   }, [userId]);
 
   useEffect(() => {
-    if (userId) { // Only fetch if userId is available
+    if (userId) {
       fetchLeaveRequests();
     }
   }, [userId, fetchLeaveRequests]);
 
   const handleSubmitLeave = async (e) => {
     e.preventDefault();
-    if (!startDate || !reason.trim()) { // End date is optional for hourly
+    if (!startDate || !reason.trim()) {
       setMessage('Please fill all required fields.');
       setTimeout(() => setMessage(''), 3000);
       return;
@@ -2096,13 +2061,12 @@ function LeaveRequest({ userId, openConfirmModal }) {
         setTimeout(() => setMessage(''), 3000);
         return;
       }
-      // For hourly leave, start_date and end_date should be the same
-      if (startDate !== endDate && endDate) { // Allow endDate to be empty if hourly
+      if (startDate !== endDate && endDate) {
           setMessage('For hourly leave, start date and end date must be the same, or end date should be empty.');
           setTimeout(() => setMessage(''), 3000);
           return;
       }
-    } else { // Full day leave
+    } else {
         if (!endDate) {
             setMessage('Please enter an end date for full-day leave.');
             setTimeout(() => setMessage(''), 3000);
@@ -2120,7 +2084,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
       const payload = {
         leave_type: leaveType,
         start_date: startDate,
-        end_date: isHourly ? startDate : endDate, // For hourly, end_date is same as start_date
+        end_date: isHourly ? startDate : endDate,
         reason: reason,
         is_hourly: isHourly,
         start_time: isHourly ? startTime : null,
@@ -2141,7 +2105,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
         setIsHourly(false);
         setStartTime('');
         setEndTime('');
-        fetchLeaveRequests(); // Re-fetch to get updated list
+        fetchLeaveRequests();
       } else {
         const errorData = await response.json();
         setMessage(`Failed to submit leave request: ${errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
@@ -2156,11 +2120,10 @@ function LeaveRequest({ userId, openConfirmModal }) {
   };
 
   const handleEditLeaveRequest = (request) => {
-    console.log("Editing request:", request);
     setEditingRequest(request);
     setLeaveType(request.leave_type);
     setStartDate(request.start_date);
-    setEndDate(request.end_date || ''); // Handle null end_date for hourly
+    setEndDate(request.end_date || '');
     setReason(request.reason);
     setIsHourly(request.is_hourly);
     setStartTime(request.start_time || '');
@@ -2208,7 +2171,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
       const payload = {
         leave_type: leaveType,
         start_date: startDate,
-        end_date: isHourly ? startDate : endDate, // For hourly, end_date is same as start_date
+        end_date: isHourly ? startDate : endDate,
         reason: reason,
         is_hourly: isHourly,
         start_time: isHourly ? startTime : null,
@@ -2216,7 +2179,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
       };
 
       const response = await authenticatedFetch(`${API_BASE_URL}/leave-requests/${editingRequest.id}/`, {
-        method: 'PUT', // or 'PATCH'
+        method: 'PUT',
         body: JSON.stringify(payload),
       });
 
@@ -2289,20 +2252,16 @@ function LeaveRequest({ userId, openConfirmModal }) {
             onChange={(e) => {
               const checked = e.target.checked;
               setIsHourly(checked);
-              // Clear time fields if switching from hourly to full day
               if (!checked) {
                 setStartTime('');
                 setEndTime('');
-                // If switching from hourly to full day, ensure end date is cleared if it was mirroring start date
-                if (startDate && startDate === endDate) { // Only clear if endDate was explicitly set to startDate
+                if (startDate && startDate === endDate) {
                     setEndDate('');
                 }
-              } else { // If switching to hourly
-                // Ensure end date is same as start date for hourly if start date is set
+              } else {
                 if (startDate) {
                     setEndDate(startDate);
                 }
-                // Set default times if empty when switching to hourly
                 if (!startTime) setStartTime('09:00');
                 if (!endTime) setEndTime('17:00');
               }
@@ -2343,7 +2302,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
             value={startDate}
             onChange={(e) => {
                 setStartDate(e.target.value);
-                if (isHourly) { // If hourly, end date should mirror start date
+                if (isHourly) {
                     setEndDate(e.target.value);
                 }
             }}
@@ -2482,6 +2441,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
                 <button
                   onClick={() => handleDeleteLeaveRequest(request.id)}
                   className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 text-sm"
+                  disabled={isLoading}
                 >
                   Delete
                 </button>
@@ -2494,198 +2454,348 @@ function LeaveRequest({ userId, openConfirmModal }) {
   );
 }
 
-// Calendar View Component (New)
-function CalendarView({ userId, userRole }) {
-  const [date, setDate] = useState(new Date());
-  const [events, setEvents] = useState([]);
-  const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+// --- DASHBOARD COMPONENTS (DEFINED AFTER THEIR CHILDREN) ---
 
-  const fetchCalendarEvents = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      let tasksUrl = `${API_BASE_URL}/tasks/`;
-      let leaveUrl = `${API_BASE_URL}/leave-requests/`;
-
-      // If it's a regular user, filter by their ID
-      if (userRole === 'user') {
-        tasksUrl += `?assigned_to=${userId}`;
-        leaveUrl += `?user=${userId}`;
-      }
-
-      const [tasksResponse, leaveResponse] = await Promise.all([
-        authenticatedFetch(tasksUrl, { method: 'GET' }),
-        authenticatedFetch(leaveUrl, { method: 'GET' }),
-      ]);
-
-      let fetchedEvents = [];
-
-      if (tasksResponse.ok) {
-        const tasksData = await tasksResponse.json();
-        tasksData.forEach(task => {
-          if (task.due_date) {
-            fetchedEvents.push({
-              id: `task-${task.id}`,
-              type: 'task',
-              title: task.name,
-              date: new Date(task.due_date),
-              status: task.status,
-              description: task.description,
-              project_name: task.project_name,
-              assigned_to_username: task.assigned_to_username,
-            });
-          }
-        });
-      } else {
-        setMessage(`Failed to fetch tasks for calendar: ${tasksResponse.statusText}`);
-      }
-
-      if (leaveResponse.ok) {
-        const leaveData = await leaveResponse.json();
-        leaveData.forEach(request => {
-          if (request.is_hourly) {
-            fetchedEvents.push({
-              id: `leave-${request.id}-${request.start_date}`,
-              type: 'leave',
-              title: `${request.user_username || 'Your'} Leave (${request.leave_type})`,
-              date: new Date(request.start_date),
-              status: request.status,
-              reason: request.reason,
-              is_hourly: true,
-              start_time: request.start_time,
-              end_time: request.end_time,
-            });
-          } else {
-            // For full-day leave, create an event for each day
-            let currentDate = new Date(request.start_date);
-            const endDate = new Date(request.end_date);
-            while (currentDate <= endDate) {
-              fetchedEvents.push({
-                id: `leave-${request.id}-${currentDate.toISOString().split('T')[0]}`,
-                type: 'leave',
-                title: `${request.user_username || 'Your'} Leave (${request.leave_type})`,
-                date: new Date(currentDate),
-                status: request.status,
-                reason: request.reason,
-                is_hourly: false,
-              });
-              currentDate.setDate(currentDate.getDate() + 1);
-            }
-          }
-        });
-      } else {
-        setMessage(`Failed to fetch leave requests for calendar: ${leaveResponse.statusText}`);
-      }
-
-      setEvents(fetchedEvents);
-
-    } catch (error) {
-      console.error('Error fetching calendar events:', error);
-      setMessage('Network error while fetching calendar events.');
-    } finally {
-      setIsLoading(false);
-      setTimeout(() => setMessage(''), 5000);
-    }
-  }, [userId, userRole]);
-
-  useEffect(() => {
-    if (userId) {
-      fetchCalendarEvents();
-    }
-  }, [userId, fetchCalendarEvents]);
-
-  // Function to add content to calendar tiles
-  const tileContent = ({ date, view }) => {
-    if (view === 'month') {
-      const dayEvents = events.filter(event =>
-        event.date.toDateString() === date.toDateString()
-      );
-
-      return (
-        <div className="flex flex-col items-center justify-center text-xs">
-          {dayEvents.map(event => (
-            <div
-              key={event.id}
-              className={`w-full text-center rounded-sm mt-0.5 px-0.5 py-0.5
-                ${event.type === 'task' ?
-                  (event.status === 'completed' ? 'bg-green-200 text-green-800' : 'bg-blue-200 text-blue-800') :
-                  (event.status === 'approved' ? 'bg-pink-200 text-pink-800' : event.status === 'pending' ? 'bg-yellow-200 text-yellow-800' : 'bg-red-200 text-red-800')
-                }`}
-              title={`${event.title} (${event.type === 'task' ? `Status: ${event.status}` :
-                (event.is_hourly ? `Status: ${event.status}, ${event.start_time}-${event.end_time}, Reason: ${event.reason}` : `Status: ${event.status}, Reason: ${event.reason}`)
-              }`}
-            >
-              {event.title.split(' ')[0]} {/* Show first word of title */}
-            </div>
-          ))}
-        </div>
-      );
-    }
-    return null;
-  };
+// User Dashboard Component
+function UserDashboard({ userId, openConfirmModal }) {
+  const [activeTab, setActiveTab] = useState('timesheets');
 
   return (
-    <div className="p-4 bg-white rounded-lg shadow-inner">
-      <h3 className="text-2xl font-medium text-gray-700 mb-4">Calendar View</h3>
-      {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-orange-100 border border-orange-400 text-orange-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
-          <span className="block sm:inline">{message}</span>
-        </div>
-      )}
-      <div className="flex justify-center mb-6">
-        <Calendar
-          onChange={setDate}
-          value={date}
-          tileContent={tileContent}
-          className="rounded-lg shadow-md border border-gray-200 p-4 w-full max-w-xl"
-        />
+    <div className="p-6">
+      <h2 className="text-3xl font-semibold text-gray-700 mb-6">User Dashboard</h2>
+      <div className="flex border-b border-gray-200 mb-6">
+        <button
+          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+            activeTab === 'timesheets'
+              ? 'bg-yellow-200 text-yellow-800 border-b-4 border-yellow-500'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('timesheets')}
+        >
+          Timesheets
+        </button>
+        <button
+          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+            activeTab === 'leave'
+              ? 'bg-pink-200 text-pink-800 border-b-4 border-pink-500'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('leave')}
+        >
+          Leave Requests
+        </button>
+        <button
+          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+            activeTab === 'calendar'
+              ? 'bg-orange-200 text-orange-800 border-b-4 border-orange-500'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('calendar')}
+        >
+          Calendar View
+        </button>
       </div>
 
-      <h4 className="text-xl font-medium text-gray-700 mb-3">Events for {date.toDateString()}</h4>
-      {isLoading ? (
-        <p className="text-gray-500">Loading events...</p>
+      {activeTab === 'timesheets' ? (
+        <TimesheetEntry userId={userId} openConfirmModal={openConfirmModal} />
+      ) : activeTab === 'leave' ? (
+        <LeaveRequest userId={userId} openConfirmModal={openConfirmModal} />
       ) : (
-        <ul className="space-y-3">
-          {events.filter(event => event.date.toDateString() === date.toDateString()).length === 0 ? (
-            <p className="text-gray-500">No events on this date.</p>
-          ) : (
-            events.filter(event => event.date.toDateString() === date.toDateString()).map(event => (
-              <li key={event.id} className={`p-3 rounded-lg shadow-sm border
-                ${event.type === 'task' ? 'bg-blue-50 border-blue-100' : 'bg-pink-50 border-pink-100'}`}>
-                <p className="font-semibold text-lg">
-                  {event.title}
-                  <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold
-                    ${event.type === 'task' ?
-                      (event.status === 'completed' ? 'bg-green-200 text-green-800' : 'bg-blue-200 text-blue-800') :
-                      (event.status === 'approved' ? 'bg-green-200 text-green-800' : event.status === 'pending' ? 'bg-yellow-200 text-yellow-800' : 'bg-red-200 text-red-800')
-                    }`}
-                  >
-                    {event.status}
-                  </span>
-                </p>
-                {event.type === 'task' && (
-                  <>
-                    <p className="text-gray-600 text-sm">Project: {event.project_name}</p>
-                    <p className="text-gray-600 text-sm">Assigned To: {event.assigned_to_username}</p>
-                    <p className="text-gray-600 text-sm">Description: {event.description}</p>
-                  </>
-                )}
-                {event.type === 'leave' && (
-                  <>
-                    {event.is_hourly && (
-                      <p className="text-gray-600 text-sm">Time: {event.start_time} - {event.end_time}</p>
-                    )}
-                    <p className="text-gray-600 text-sm">Reason: {event.reason}</p>
-                  </>
-                )}
-              </li>
-            ))
-          )}
-        </ul>
+        <CalendarView userId={userId} userRole="user" />
       )}
     </div>
   );
 }
 
+
+// Admin Dashboard Component
+function AdminDashboard({ userId, openConfirmModal }) {
+  const [activeTab, setActiveTab] = useState('projects');
+
+  return (
+    <div className="p-6">
+      <h2 className="text-3xl font-semibold text-gray-700 mb-6">Admin Dashboard</h2>
+      <div className="flex flex-wrap border-b border-gray-200 mb-6">
+        <button
+          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+            activeTab === 'projects'
+              ? 'bg-blue-200 text-blue-800 border-b-4 border-blue-500'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('projects')}
+        >
+          Project Management
+        </button>
+        <button
+          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+            activeTab === 'tasks'
+              ? 'bg-green-200 text-green-800 border-b-4 border-green-500'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('tasks')}
+        >
+          Task Assignment
+        </button>
+        <button
+          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+            activeTab === 'users'
+              ? 'bg-purple-200 text-purple-800 border-b-4 border-purple-500'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('users')}
+        >
+          User Management
+        </button>
+        <button
+          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+            activeTab === 'leave-approval'
+              ? 'bg-red-200 text-red-800 border-b-4 border-red-500'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('leave-approval')}
+        >
+          Leave Approval
+        </button>
+        <button
+          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+            activeTab === 'reporting'
+              ? 'bg-teal-200 text-teal-800 border-b-4 border-teal-500'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('reporting')}
+        >
+          Reporting
+        </button>
+        <button
+          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+            activeTab === 'calendar'
+              ? 'bg-orange-200 text-orange-800 border-b-4 border-orange-500'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('calendar')}
+        >
+          Calendar View
+        </button>
+      </div>
+
+      {activeTab === 'projects' ? (
+        <ProjectManagement userId={userId} openConfirmModal={openConfirmModal} />
+      ) : activeTab === 'tasks' ? (
+        <TaskAssignment userId={userId} openConfirmModal={openConfirmModal} />
+      ) : activeTab === 'users' ? (
+        <UserManagement userId={userId} openConfirmModal={openConfirmModal} />
+      ) : activeTab === 'leave-approval' ? (
+        <LeaveApproval userId={userId} openConfirmModal={openConfirmModal} />
+      ) : activeTab === 'reporting' ? (
+        <Reporting userId={userId} />
+      ) : (
+        <CalendarView userId={userId} userRole="admin" />
+      )}
+    </div>
+  );
+}
+
+
+// --- MAIN APP COMPONENT (DEFINED LAST) ---
+
+// Main App Component - Defined last as per best practice for clarity and bundling
+function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userRole, setUserRole] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [currentPage, setCurrentPage] = useState('login'); // 'login', 'register', 'admin-login', 'admin', 'user'
+  const [message, setMessage] = useState('');
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMessage, setModalMessage] = useState('');
+  const [modalConfirmAction, setModalConfirmAction] = useState(null);
+
+  const openConfirmModal = (msg, onConfirm) => {
+    setModalMessage(msg);
+    setModalConfirmAction(() => onConfirm);
+    setIsModalOpen(true);
+  };
+
+  const handleModalConfirm = () => {
+    if (modalConfirmAction) {
+      modalConfirmAction();
+    }
+    setIsModalOpen(false);
+    setModalConfirmAction(null);
+  };
+
+  const handleModalCancel = () => {
+    setIsModalOpen(false);
+    setModalConfirmAction(null);
+  };
+
+
+  useEffect(() => {
+    const accessToken = localStorage.getItem('access_token');
+    const storedUserRole = localStorage.getItem('user_role');
+    const storedUserId = localStorage.getItem('user_id');
+
+    if (accessToken && storedUserRole && storedUserId) {
+      setIsAuthenticated(true);
+      setUserRole(storedUserRole);
+      setUserId(parseInt(storedUserId));
+      setCurrentPage(storedUserRole === 'admin' ? 'admin' : 'user');
+    } else {
+      setIsAuthenticated(false);
+      setUserRole(null);
+      setUserId(null);
+      setCurrentPage('login');
+    }
+  }, []);
+
+  const handleLogin = async (username, password) => {
+    setMessage('');
+    console.log("Attempting login for:", username);
+    try {
+      const response = await fetch(`${API_BASE_URL}/token/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      console.log("Login API Response status:", response.status);
+      console.log("Login API Response OK:", response.ok);
+
+      if (response.ok) {
+        let data;
+        try {
+          data = await response.json();
+          console.log("Login successful! Backend response data:", data);
+        } catch (jsonError) {
+          console.error("Error parsing JSON response from backend:", jsonError);
+          setMessage('Login failed: Invalid response from server.');
+          return; // Stop execution if JSON parsing fails
+        }
+        
+        // Ensure data has expected properties before using them
+        const userRoleFromBackend = data.is_admin ? 'admin' : 'user';
+        const userIdFromBackend = data.user_id;
+
+        if (userIdFromBackend === undefined || userIdFromBackend === null) {
+            console.error("Backend response missing user_id:", data);
+            setMessage('Login failed: User ID missing from server response.');
+            return;
+        }
+
+        localStorage.setItem('access_token', data.access);
+        localStorage.setItem('refresh_token', data.refresh);
+        localStorage.setItem('user_role', userRoleFromBackend);
+        localStorage.setItem('user_id', userIdFromBackend);
+
+        setIsAuthenticated(true);
+        setUserRole(userRoleFromBackend);
+        setUserId(userIdFromBackend);
+        setCurrentPage(userRoleFromBackend === 'admin' ? 'admin' : 'user');
+        setMessage('Login successful!');
+      } else {
+        let errorData;
+        try {
+          errorData = await response.json();
+          console.error("Login failed. Backend error response:", errorData);
+          setMessage(errorData.detail || errorData.message || 'Login failed. Please check your credentials.');
+        } catch (jsonError) {
+          console.error("Error parsing error JSON response from backend:", jsonError);
+          setMessage(`Login failed with status ${response.status}. Server sent unreadable error.`);
+        }
+      }
+    } catch (error) {
+      console.error('Login network error:', error);
+      setMessage('An unexpected error occurred during login. Please check your network connection.');
+    } finally {
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
+  const handleLogout = async () => {
+    setMessage('');
+    const refreshToken = localStorage.getItem('refresh_token');
+    try {
+      const response = await authenticatedFetch(`${API_BASE_URL}/logout/`, {
+        method: 'POST',
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (response.ok) {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_role');
+        localStorage.removeItem('user_id');
+        setIsAuthenticated(false);
+        setUserRole(null);
+        setUserId(null);
+        setCurrentPage('login');
+        setMessage('Logout successful!');
+      } else {
+        const errorData = await response.json();
+        setMessage(errorData.message || 'Logout failed.');
+      }
+    } catch (error) {
+      console.error('Logout error:', error);
+      setMessage('Network error during logout.');
+    } finally {
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
+  const handleRegisterSuccess = () => {
+    setMessage('Registration successful! Please log in.');
+    setCurrentPage('login');
+    setTimeout(() => setMessage(''), 5000);
+  };
+
+  const renderContent = () => {
+    if (!isAuthenticated) {
+      if (currentPage === 'register') {
+        return <Register onRegisterSuccess={handleRegisterSuccess} onGoToLogin={() => setCurrentPage('login')} />;
+      } else if (currentPage === 'admin-login') {
+        return <AdminLogin onLogin={handleLogin} onGoToRegularLogin={() => setCurrentPage('login')} />;
+      } else { // currentPage === 'login'
+        return <Login onLogin={handleLogin} onGoToRegister={() => setCurrentPage('register')} onGoToAdminLogin={() => setCurrentPage('admin-login')} />;
+      }
+    } else if (userRole === 'admin') {
+      return <AdminDashboard userId={userId} openConfirmModal={openConfirmModal} />;
+    } else {
+      return <UserDashboard userId={userId} openConfirmModal={openConfirmModal} />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 font-sans text-gray-900">
+      <header className="bg-white shadow-md p-4 flex justify-between items-center">
+        <h1 className="text-3xl font-bold text-gray-800">WorkLog</h1>
+        {isAuthenticated && (
+          <nav className="flex items-center space-x-4">
+            <span className="text-gray-700 font-medium">Logged in as: {userRole === 'admin' ? 'Admin' : 'User'} (ID: {userId})</span>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 shadow-md"
+            >
+              Logout
+            </button>
+          </nav>
+        )}
+      </header>
+      <main className="container mx-auto p-4 py-8">
+        {message && (
+          <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-green-100 border border-green-400 text-green-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+            <span className="block sm:inline">{message}</span>
+          </div>
+        )}
+        {renderContent()}
+      </main>
+      <ConfirmationModal
+        isOpen={isModalOpen}
+        message={modalMessage}
+        onConfirm={handleModalConfirm}
+        onCancel={handleModalCancel}
+      />
+    </div>
+  );
+}
 
 export default App;

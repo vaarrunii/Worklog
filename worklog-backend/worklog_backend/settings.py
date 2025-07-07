@@ -21,7 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-w2cg8wjk$z+-^a$^l4#okn@0ohl08(z7+me)fa(f#ais-381iq'
+SECRET_KEY = 'django-insecure-w2cg8wjk$z+-^a$^l4#okn@0ohl08(z7+me)fa(f#ais-381iq' # CONSIDER CHANGING THIS IN PRODUCTION!
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -41,7 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',      # Add Django REST Framework
     'rest_framework_simplejwt', # Add Simple JWT for token authentication
-    'core',                # Add your new 'core' app
+    'core',                # Add your 'core' app (ENSURE THIS IS HERE)
     'corsheaders',         # Add CORS headers app
     'rest_framework_simplejwt.token_blacklist',
 ]
@@ -51,7 +51,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware', # <-- Re-enabled CSRF middleware (important for admin)
+    'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -138,22 +138,23 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://localhost:\d+$",
     r"^http://127\.0\.0\.1:\d+$",
 ]
-CORS_ALLOW_CREDENTIALS = True # Still needed for any potential session/CSRF for admin, though not for API
+CORS_ALLOW_CREDENTIALS = True
 
 # CSRF Trusted Origins: Important for allowing your frontend to send CSRF tokens
-# This is needed because localhost:3000 and 127.0.0.1:8000 are different origins.
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://127.0.0.1:8000",
-    "http://localhost:8000",
+    "http://127.0.0.1:8000", # Add if your Django is on 8000
+    "http://localhost:8000", # Add if your Django is on 8000
+    "http://127.0.0.1:8001", # Add if your Django is on 8001
+    "http://localhost:8001", # Add if your Django is on 8001
 ]
 
-# Cookie settings (less critical for API calls now, but good to keep for admin)
-SESSION_COOKIE_DOMAIN = 'localhost'
-CSRF_COOKIE_DOMAIN = 'localhost'
-SESSION_COOKIE_SAMESITE = 'Lax' # Changed back to Lax, as it's safer and token auth bypasses it
-CSRF_COOKIE_SAMESITE = 'Lax'   # Changed back to Lax
+# Cookie settings
+SESSION_COOKIE_DOMAIN = None # Set to None for localhost or specific domain
+CSRF_COOKIE_DOMAIN = None    # Set to None for localhost or specific domain
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 CSRF_COOKIE_HTTPONLY = False
@@ -162,11 +163,10 @@ CSRF_USE_SESSIONS = True
 CSRF_COOKIE_NAME = 'csrftoken'
 CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
 
-# REST Framework settings - IMPORTANT: Use TokenAuthentication
+# REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication', # <-- Use JWT Authentication
-        # 'rest_framework.authentication.SessionAuthentication', # Remove or comment out SessionAuthentication for APIs
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated', # Default: require authentication for APIs
@@ -175,16 +175,16 @@ REST_FRAMEWORK = {
 
 # Simple JWT settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60), # Token valid for 60 minutes
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),   # Refresh token valid for 1 day
-    'ROTATE_REFRESH_TOKENS': True, # Automatically rotate refresh tokens <-- CORRECTED LINE
-    'BLACKLIST_AFTER_ROTATION': True, # Blacklist old refresh tokens
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'VERIFYING_KEY': None,
     'AUDIENCE': None,
     'ISSUER': None,
-    'AUTH_HEADER_TYPES': ('Bearer',), # Use 'Bearer' prefix for token
+    'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
@@ -193,8 +193,10 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
     'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
-}
 
+    # THIS IS THE ABSOLUTELY CRITICAL LINE TO ADD/CHANGE
+    'TOKEN_OBTAIN_PAIR_RESPONSE_SERIALIZER': 'core.serializers.MyTokenObtainPairSerializer',
+}
 
 # Email Reminders Configuration (for development, prints to console)
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
