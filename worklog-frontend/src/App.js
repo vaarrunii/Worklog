@@ -7,7 +7,8 @@ import moment from 'moment'; // Import moment for date/time handling
 // IMPORTANT: Adjust this port to match the port your Django backend is running on (e.g., 8000 or 8001)
 // For local development, use: 'http://127.0.0.1:8000/api'
 // For Render deployment, use: 'https://worklog-72ei.onrender.com/api'
-const API_BASE_URL = "https://worklog-cuej.onrender.com/api";  // <-- no trailing slash ✅
+const API_BASE_URL = 'https://worklog-cuej.onrender.com/api'; // <--- **THIS IS THE CRITICAL CHANGE**
+
 
 // Helper function to make authenticated API calls with JWT token
 async function authenticatedFetch(url, options = {}) {
