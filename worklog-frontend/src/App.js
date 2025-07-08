@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css'; // Default styles for react-calendar
+import moment from 'moment'; // Import moment for date/time handling
 
 // Define your Django API base URL
 // IMPORTANT: Adjust this port to match the port your Django backend is running on (e.g., 8000 or 8001)
-const API_BASE_URL = 'https://worklog-72ei.onrender.com/api'; 
+// For local development, use: 'http://127.0.0.1:8000/api'
+// For Render deployment, use: 'https://worklog-72ei.onrender.com/api'
+const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
 // Helper function to make authenticated API calls with JWT token
 async function authenticatedFetch(url, options = {}) {
@@ -1536,7 +1539,7 @@ function Reporting({ userId }) {
 }
 
 // Calendar View Component - IMPROVED STYLING
-function CalendarView({ userId, userRole }) {
+function CalendarView({ userId, userRole, viewTaskDetails }) { // Added viewTaskDetails prop
   const [date, setDate] = useState(new Date());
   const [events, setEvents] = useState([]);
   const [message, setMessage] = useState('');
@@ -1574,6 +1577,7 @@ function CalendarView({ userId, userRole }) {
               project_name: task.project_name,
               assigned_to_username: task.assigned_to_username,
               parent_task_name: task.parent_task_name, // Include parent task name
+              taskId: task.id, // Pass task ID for clickability
             });
           }
         });
@@ -1654,6 +1658,12 @@ function CalendarView({ userId, userRole }) {
               title={`${event.title} (${event.type === 'task' ? `Status: ${event.status}` :
                 (event.is_hourly ? `Status: ${event.status}, ${event.start_time}-${event.end_time}, Reason: ${event.reason}` : `Status: ${event.status}, Reason: ${event.reason}`)
               }`}
+              onClick={(e) => { // Make calendar event clickable for tasks
+                e.stopPropagation(); // Prevent calendar tile click from propagating
+                if (event.type === 'task' && viewTaskDetails) {
+                  viewTaskDetails(event.taskId);
+                }
+              }}
             >
               {event.type === 'task' ? '✓ Task' : '✈︎ Leave'}
             </div>
@@ -1692,8 +1702,14 @@ function CalendarView({ userId, userRole }) {
           ) : (
             <ul className="space-y-4">
               {events.filter(event => event.date.toDateString() === date.toDateString()).map(event => (
-                <li key={event.id} className={`p-4 rounded-lg shadow-sm border
-                  ${event.type === 'task' ? 'bg-blue-100 border-blue-200' : 'bg-pink-100 border-pink-200'}`}>
+                <li key={event.id}
+                    className={`p-4 rounded-lg shadow-sm border cursor-pointer
+                    ${event.type === 'task' ? 'bg-blue-100 border-blue-200 hover:bg-blue-200' : 'bg-pink-100 border-pink-200'}`}
+                    onClick={() => { // Make the list item clickable for tasks
+                      if (event.type === 'task' && viewTaskDetails) {
+                        viewTaskDetails(event.taskId);
+                      }
+                    }}>
                   <div className="flex items-center mb-2">
                     <span className={`text-xl mr-3 ${event.type === 'task' ? 'text-blue-600' : 'text-pink-600'}`}>
                       {event.type === 'task' ? '✓' : '✈︎'}
@@ -1814,7 +1830,7 @@ function TimesheetEntry({ userId, openConfirmModal }) {
           }
         }
       });
-      
+
       // Ensure there's always at least one empty row for new input
       if (initialDynamicRows.length === 0) {
         initialDynamicRows.push({
@@ -1841,7 +1857,7 @@ function TimesheetEntry({ userId, openConfirmModal }) {
             });
         }
       }
-      
+
       setDynamicRows(initialDynamicRows);
 
     } catch (error) {
@@ -1897,7 +1913,7 @@ function TimesheetEntry({ userId, openConfirmModal }) {
     }
 
     const newHours = parseFloat(hoursInput) || 0;
-    
+
     // Find the current row to get the selected task hierarchy
     const currentRow = dynamicRows.find(row => row.id === rowId);
     if (!currentRow) {
@@ -2237,7 +2253,6 @@ function TimesheetEntry({ userId, openConfirmModal }) {
                     {getDailyTotal(formatDate(date))}
                   </td>
                 ))}
-                <td className="py-3 px-6 text-center">{getGrandTotal()}</td>
                 <td className="py-3 px-6 text-center"></td> {/* Empty cell for actions column, but no trailing whitespace */}
               </tr>
             </tbody>
@@ -2265,7 +2280,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
   const fetchLeaveRequests = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/leave-requests/?user=${userId}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/leave-requests/`, {
         method: 'GET',
       });
       if (response.ok) {
@@ -2282,7 +2297,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
       setIsLoading(false);
       setTimeout(() => setMessage(''), 5000);
     }
-  }, [userId]);
+  }, []);
 
   useEffect(() => {
     if (userId) {
@@ -2704,7 +2719,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
 }
 
 // NEW COMPONENT: UserTaskManagement
-function UserTaskManagement({ userId, openConfirmModal }) {
+function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // Added viewTaskDetails prop
   const [projects, setProjects] = useState([]);
   const [userTasks, setUserTasks] = useState([]); // Tasks assigned to this user (for parent task dropdown)
   const [selectedProject, setSelectedProject] = useState('');
@@ -2803,12 +2818,42 @@ function UserTaskManagement({ userId, openConfirmModal }) {
     task.project === parseInt(selectedProject) && task.parent_task === null
   );
 
+  // Helper to render tasks hierarchically for UserTaskManagement
+  const renderUserTasks = (tasksToRender, depth = 0) => {
+    return tasksToRender.map(task => (
+      <React.Fragment key={task.id}>
+        <li
+          className={`bg-indigo-50 p-4 rounded-lg shadow-sm border border-indigo-100 flex flex-col sm:flex-row justify-between items-start sm:items-center cursor-pointer hover:bg-indigo-100`}
+          style={{ marginLeft: `${depth * 20}px` }} // Indent subtasks
+          onClick={() => viewTaskDetails(task.id)} // Make task clickable
+        >
+          <div className="mb-2 sm:mb-0">
+            <p className="font-semibold text-lg text-indigo-800">
+              {depth > 0 && '↳ '} {/* Arrow for subtasks */}
+              {task.name} (Project: {task.project_name})
+            </p>
+            {task.parent_task_name && <p className="text-gray-600 text-sm">Parent: {task.parent_task_name}</p>}
+            <p className="text-gray-600 text-sm">Due Date: {task.due_date || 'N/A'}</p>
+            <p className="text-gray-600 text-sm">Status: <span className={`font-semibold ${task.status === 'completed' ? 'text-green-600' : task.status === 'in_progress' ? 'text-blue-600' : 'text-yellow-600'}`}>{task.status}</span></p>
+            <p className="text-gray-600 text-sm">Progress: {task.progress}%</p>
+          </div>
+          {/* No edit/delete buttons here, as per user's request for UserTaskManagement */}
+        </li>
+        {/* Recursively render subtasks if they exist */}
+        {task.subtasks_ids && task.subtasks_ids.length > 0 && (
+          renderUserTasks(userTasks.filter(t => task.subtasks_ids.includes(t.id)), depth + 1)
+        )}
+      </React.Fragment>
+    ));
+  };
+
+
   return (
     <div className="p-4 bg-white rounded-lg shadow-inner">
       <h3 className="text-2xl font-medium text-gray-700 mb-4">Create My Tasks/Subtasks</h3>
       <p className="text-gray-600 mb-4">
         Here you can create new tasks for yourself. If you select a "Parent Task," the new entry will be a subtask under it.
-        Otherwise, it will be a main task.
+        Otherwise, it will be a main task. Click on an existing task below to view its details and log hourly time.
       </p>
       {message && (
         <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-indigo-100 border border-indigo-400 text-indigo-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
@@ -2817,7 +2862,7 @@ function UserTaskManagement({ userId, openConfirmModal }) {
       )}
       <form onSubmit={handleCreateTask} className="mb-6 bg-indigo-50 p-6 rounded-lg shadow-sm border border-indigo-100">
         <h4 className="text-xl font-medium text-gray-700 mb-4">New Task/Subtask Details</h4>
-        
+
         <div className="mb-4">
           <label htmlFor="selectProjectUser" className="block text-gray-700 text-sm font-bold mb-2">
             Select Project
@@ -2915,6 +2960,18 @@ function UserTaskManagement({ userId, openConfirmModal }) {
           {isLoading ? 'Creating...' : 'Create My Task'}
         </button>
       </form>
+
+      <h4 className="text-xl font-medium text-gray-700 mb-3">My Assigned Tasks</h4>
+      {isLoading && userTasks.length === 0 ? (
+        <p className="text-gray-500">Loading tasks...</p>
+      ) : userTasks.length === 0 ? (
+        <p className="text-gray-500">No tasks assigned to you yet. Create one above or ask your admin to assign one!</p>
+      ) : (
+        <ul className="space-y-4">
+          {/* Render only top-level tasks initially, and let recursion handle subtasks */}
+          {renderUserTasks(userTasks.filter(task => task.parent_task === null))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -2923,7 +2980,7 @@ function UserTaskManagement({ userId, openConfirmModal }) {
 // --- DASHBOARD COMPONENTS (DEFINED AFTER THEIR CHILDREN) ---
 
 // User Dashboard Component
-function UserDashboard({ userId, openConfirmModal }) {
+function UserDashboard({ userId, openConfirmModal, viewTaskDetails }) { // Added viewTaskDetails prop
   const [activeTab, setActiveTab] = useState('timesheets');
 
   return (
@@ -2977,9 +3034,269 @@ function UserDashboard({ userId, openConfirmModal }) {
       ) : activeTab === 'leave' ? (
         <LeaveRequest userId={userId} openConfirmModal={openConfirmModal} />
       ) : activeTab === 'my-tasks' ? ( // RENDER NEW COMPONENT
-        <UserTaskManagement userId={userId} openConfirmModal={openConfirmModal} />
+        <UserTaskManagement userId={userId} openConfirmModal={openConfirmModal} viewTaskDetails={viewTaskDetails} />
       ) : (
-        <CalendarView userId={userId} userRole="user" />
+        <CalendarView userId={userId} userRole="user" viewTaskDetails={viewTaskDetails} />
+      )}
+    </div>
+  );
+}
+
+// NEW COMPONENT: HourlyUpdatesReport (for Admin Dashboard)
+function HourlyUpdatesReport({ userId }) {
+  const [timeEntries, setTimeEntries] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedUserFilter, setSelectedUserFilter] = useState('');
+  const [selectedProjectFilter, setSelectedProjectFilter] = useState('');
+  const [selectedTaskFilter, setSelectedTaskFilter] = useState('');
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
+
+  const fetchHourlyUpdates = useCallback(async () => {
+    setIsLoading(true);
+    setMessage('');
+
+    try {
+      // Fetch all time entries (admin can see all)
+      let url = `${API_BASE_URL}/task-time-entries/`;
+      const queryParams = [];
+      if (selectedUserFilter) queryParams.push(`user_id=${selectedUserFilter}`);
+      if (selectedProjectFilter) queryParams.push(`project_id=${selectedProjectFilter}`); // Assuming backend can filter by project
+      if (selectedTaskFilter) queryParams.push(`task_id=${selectedTaskFilter}`);
+      if (startDateFilter) queryParams.push(`start_date_gte=${startDateFilter}`); // Assuming backend can filter by date range
+      if (endDateFilter) queryParams.push(`end_date_lte=${endDateFilter}`);
+
+      if (queryParams.length > 0) {
+        url += `?${queryParams.join('&')}`;
+      }
+
+      const [timeEntriesResponse, usersResponse, tasksResponse, projectsResponse] = await Promise.all([
+        authenticatedFetch(url, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/users/`, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/tasks/`, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/projects/`, { method: 'GET' }),
+      ]);
+
+      if (timeEntriesResponse.ok) {
+        setTimeEntries(await timeEntriesResponse.json());
+      } else {
+        setMessage(`Failed to fetch hourly updates: ${timeEntriesResponse.statusText}`);
+      }
+      if (usersResponse.ok) {
+        setUsers(await usersResponse.json());
+      } else {
+        setMessage(`Failed to fetch users: ${usersResponse.statusText}`);
+      }
+      if (tasksResponse.ok) {
+        setTasks(await tasksResponse.json());
+      } else {
+        setMessage(`Failed to fetch tasks: ${tasksResponse.statusText}`);
+      }
+      if (projectsResponse.ok) {
+        setProjects(await projectsResponse.json());
+      } else {
+        setMessage(`Failed to fetch projects: ${projectsResponse.statusText}`);
+      }
+
+    } catch (error) {
+      console.error('Error fetching hourly updates:', error);
+      setMessage('Network error while fetching hourly updates.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  }, [selectedUserFilter, selectedProjectFilter, selectedTaskFilter, startDateFilter, endDateFilter]);
+
+
+  useEffect(() => {
+    fetchHourlyUpdates();
+  }, [fetchHourlyUpdates]); // Re-fetch when filters change
+
+
+  const getTaskName = (taskId) => tasks.find(t => t.id === taskId)?.name || `Task ${taskId}`;
+  const getUserName = (userId) => users.find(u => u.id === userId)?.username || `User ${userId}`;
+  const getProjectName = (projectId) => projects.find(p => p.id === projectId)?.name || `Project ${projectId}`;
+
+  // Filter tasks for the task dropdown based on selected project
+  const filteredTasksForDropdown = useCallback(() => {
+    if (!selectedProjectFilter) {
+      return tasks; // Show all tasks if no project filter
+    }
+    return tasks.filter(task => task.project === parseInt(selectedProjectFilter));
+  }, [tasks, selectedProjectFilter]);
+
+  // Group time entries by user
+  const groupedTimeEntries = timeEntries.reduce((acc, entry) => {
+    const userId = entry.user;
+    if (!acc[userId]) {
+      acc[userId] = {
+        user_id: userId,
+        user_username: getUserName(userId),
+        entries: [],
+        total_hours: 0,
+      };
+    }
+    acc[userId].entries.push(entry);
+    acc[userId].total_hours += entry.duration_hours;
+    return acc;
+  }, {});
+
+  // Sort users by username for consistent display
+  const sortedUsers = Object.values(groupedTimeEntries).sort((a, b) =>
+    a.user_username.localeCompare(b.user_username)
+  );
+
+
+  return (
+    <div className="p-4 bg-white rounded-lg shadow-inner">
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Hourly Time Updates</h3>
+      <p className="text-gray-600 mb-4">View and filter all hourly time entries logged by users.</p>
+      {message && (
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-green-100 border border-green-400 text-green-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+          <span className="block sm:inline">{message}</span>
+        </div>
+      )}
+
+      {/* Filter Section */}
+      <div className="mb-6 bg-gray-50 p-6 rounded-lg shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div>
+          <label htmlFor="userFilter" className="block text-gray-700 text-sm font-bold mb-2">Filter by User:</label>
+          <select
+            id="userFilter"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
+            value={selectedUserFilter}
+            onChange={(e) => setSelectedUserFilter(e.target.value)}
+            disabled={isLoading}
+          >
+            <option value="">All Users</option>
+            {users.map(user => (
+              <option key={user.id} value={user.id}>{user.username}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="projectFilter" className="block text-gray-700 text-sm font-bold mb-2">Filter by Project:</label>
+          <select
+            id="projectFilter"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
+            value={selectedProjectFilter}
+            onChange={(e) => {
+                setSelectedProjectFilter(e.target.value);
+                setSelectedTaskFilter(''); // Reset task filter when project changes
+            }}
+            disabled={isLoading}
+          >
+            <option value="">All Projects</option>
+            {projects.map(project => (
+              <option key={project.id} value={project.id}>{project.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="taskFilter" className="block text-gray-700 text-sm font-bold mb-2">Filter by Task:</label>
+          <select
+            id="taskFilter"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
+            value={selectedTaskFilter}
+            onChange={(e) => setSelectedTaskFilter(e.target.value)}
+            disabled={isLoading || filteredTasksForDropdown().length === 0}
+          >
+            <option value="">All Tasks</option>
+            {filteredTasksForDropdown().map(task => (
+              <option key={task.id} value={task.id}>{task.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="startDateFilter" className="block text-gray-700 text-sm font-bold mb-2">Start Date:</label>
+          <input
+            type="date"
+            id="startDateFilter"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
+            value={startDateFilter}
+            onChange={(e) => setStartDateFilter(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        <div>
+          <label htmlFor="endDateFilter" className="block text-gray-700 text-sm font-bold mb-2">End Date:</label>
+          <input
+            type="date"
+            id="endDateFilter"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
+            value={endDateFilter}
+            onChange={(e) => setEndDateFilter(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        <div className="md:col-span-2 lg:col-span-1 flex items-end justify-end">
+          <button
+            onClick={() => {
+              setSelectedUserFilter('');
+              setSelectedProjectFilter('');
+              setSelectedTaskFilter('');
+              setStartDateFilter('');
+              setEndDateFilter('');
+            }}
+            className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition duration-300 shadow-md w-full"
+            disabled={isLoading}
+          >
+            Clear Filters
+          </button>
+        </div>
+      </div>
+
+      {isLoading && timeEntries.length === 0 ? (
+        <p className="text-gray-500 text-center py-8">Loading hourly updates...</p>
+      ) : sortedUsers.length === 0 ? (
+        <p className="text-gray-500 text-center py-8">No hourly time entries found for the selected filters.</p>
+      ) : (
+        <div className="overflow-x-auto relative shadow-md sm:rounded-lg">
+          <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+            <thead className="text-xs text-gray-700 uppercase bg-gray-200 dark:bg-gray-700 dark:text-gray-400">
+              <tr>
+                <th scope="col" className="py-3 px-6">User</th>
+                <th scope="col" className="py-3 px-6">Project</th>
+                <th scope="col" className="py-3 px-6">Task</th>
+                <th scope="col" className="py-3 px-6">Date</th>
+                <th scope="col" className="py-3 px-6">Start Time</th>
+                <th scope="col" className="py-3 px-6">End Time</th>
+                <th scope="col" className="py-3 px-6">Duration (Hours)</th>
+                <th scope="col" className="py-3 px-6">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedUsers.map(userGroup => (
+                <React.Fragment key={userGroup.user_id}>
+                  {/* User Header Row */}
+                  <tr className="bg-blue-100 border-b border-blue-200">
+                    <td colSpan="8" className="py-3 px-6 font-bold text-lg text-blue-800">
+                      {userGroup.user_username} (Total: {userGroup.total_hours.toFixed(2)} hours)
+                    </td>
+                  </tr>
+                  {/* Individual Time Entries for this User */}
+                  {userGroup.entries.sort((a, b) => moment(b.start_time).valueOf() - moment(a.start_time).valueOf()).map(entry => (
+                    <tr key={entry.id} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                      {/* Empty cell for User column in detail rows */}
+                      <td className="py-4 px-6"></td>
+                      <td className="py-4 px-6">{getProjectName(tasks.find(t => t.id === entry.task)?.project)}</td>
+                      <td className="py-4 px-6">{getTaskName(entry.task)}</td>
+                      <td className="py-4 px-6">{moment(entry.start_time).format('YYYY-MM-DD')}</td>
+                      <td className="py-4 px-6">{moment(entry.start_time).format('HH:mm')}</td>
+                      <td className="py-4 px-6">{moment(entry.end_time).format('HH:mm')}</td>
+                      <td className="py-4 px-6 font-bold">{entry.duration_hours.toFixed(2)}</td>
+                      <td className="py-4 px-6">{entry.description}</td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -2987,8 +3304,8 @@ function UserDashboard({ userId, openConfirmModal }) {
 
 
 // Admin Dashboard Component
-function AdminDashboard({ userId, openConfirmModal }) {
-  const [activeTab, setActiveTab] = useState('projects');
+function AdminDashboard({ userId, openConfirmModal, viewTaskDetails }) { // Added viewTaskDetails prop
+  const [activeTab, setActiveTab] = useState('projects'); // Default tab
 
   return (
     <div className="p-6">
@@ -3046,6 +3363,16 @@ function AdminDashboard({ userId, openConfirmModal }) {
         </button>
         <button
           className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+            activeTab === 'hourly-updates' // NEW TAB FOR HOURLY UPDATES
+              ? 'bg-gray-200 text-gray-800 border-b-4 border-gray-500'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('hourly-updates')}
+        >
+          Hourly Updates
+        </button>
+        <button
+          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
             activeTab === 'calendar'
               ? 'bg-orange-200 text-orange-800 border-b-4 border-orange-500'
               : 'text-gray-600 hover:bg-gray-100'
@@ -3066,8 +3393,10 @@ function AdminDashboard({ userId, openConfirmModal }) {
         <LeaveApproval userId={userId} openConfirmModal={openConfirmModal} />
       ) : activeTab === 'reporting' ? (
         <Reporting userId={userId} />
+      ) : activeTab === 'hourly-updates' ? ( // RENDER NEW HOURLY UPDATES COMPONENT
+        <HourlyUpdatesReport userId={userId} />
       ) : (
-        <CalendarView userId={userId} userRole="admin" />
+        <CalendarView userId={userId} userRole="admin" viewTaskDetails={viewTaskDetails} />
       )}
     </div>
   );
@@ -3081,12 +3410,25 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState(null);
   const [userId, setUserId] = useState(null);
-  const [currentPage, setCurrentPage] = useState('login'); // 'login', 'register', 'admin-login', 'admin', 'user'
+  const [currentPage, setCurrentPage] = useState('login'); // 'login', 'register', 'admin-login', 'admin', 'user', 'task-detail'
   const [message, setMessage] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMessage, setModalMessage] = useState('');
   const [modalConfirmAction, setModalConfirmAction] = useState(null);
+
+  // --- NEW State Variables for Task Time Entries ---
+  const [selectedTaskId, setSelectedTaskId] = useState(null); // Stores the ID of the task currently being viewed
+  const [selectedTask, setSelectedTask] = useState(null); // Stores the full object of the selected task
+  const [taskTimeEntries, setTaskTimeEntries] = useState([]); // Stores time entries for the selected task
+
+  // State for the new time entry form
+  const [newTimeEntryStartTime, setNewTimeEntryStartTime] = useState('');
+  const [newTimeEntryEndTime, setNewTimeEntryEndTime] = useState('');
+  const [newTimeEntryDescription, setNewTimeEntryDescription] = useState('');
+  const [timeEntryError, setTimeEntryError] = useState('');
+  const [timeEntrySuccess, setTimeEntrySuccess] = useState('');
+
 
   const openConfirmModal = (msg, onConfirm) => {
     setModalMessage(msg);
@@ -3149,7 +3491,7 @@ function App() {
           setMessage('Login failed: Invalid response from server.');
           return; // Stop execution if JSON parsing fails
         }
-        
+
         // Ensure data has expected properties before using them
         const userRoleFromBackend = data.is_admin ? 'admin' : 'user';
         const userIdFromBackend = data.user_id;
@@ -3209,6 +3551,16 @@ function App() {
         setUserId(null);
         setCurrentPage('login');
         setMessage('Logout successful!');
+        // --- NEW: Clear task-specific state on logout ---
+        setSelectedTaskId(null);
+        setSelectedTask(null);
+        setTaskTimeEntries([]);
+        setNewTimeEntryStartTime('');
+        setNewTimeEntryEndTime('');
+        setNewTimeEntryDescription('');
+        setTimeEntryError('');
+        setTimeEntrySuccess('');
+        // --- END NEW ---
       } else {
         const errorData = await response.json();
         setMessage(errorData.message || 'Logout failed.');
@@ -3227,6 +3579,132 @@ function App() {
     setTimeout(() => setMessage(''), 5000);
   };
 
+  // --- NEW Functions for Task Time Entries (within main App component) ---
+
+  // Function to navigate to a specific task's detail view
+  const viewTaskDetails = useCallback((taskId) => {
+      setSelectedTaskId(taskId);
+      setCurrentPage('task-detail'); // Set a new page state for task detail view
+  }, []);
+
+  // Function to fetch details of a specific task
+  const fetchTaskDetails = useCallback(async (taskId) => {
+      const token = localStorage.getItem('access_token');
+      if (!token || !taskId) return;
+      try {
+          const response = await authenticatedFetch(`${API_BASE_URL}/tasks/${taskId}/`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (response.ok) {
+              const data = await response.json();
+              setSelectedTask(data);
+          } else {
+              console.error(`Failed to fetch task ${taskId} details:`, response.statusText);
+              setSelectedTask(null);
+              setMessage(`Failed to load task details: ${response.statusText}`);
+          }
+      } catch (error) {
+          console.error(`Error fetching task ${taskId} details:`, error);
+          setSelectedTask(null);
+          setMessage(`Network error fetching task details.`);
+      } finally {
+          setTimeout(() => setMessage(''), 5000);
+      }
+  }, []);
+
+  // Function to fetch time entries for a specific task
+  const fetchTaskTimeEntries = useCallback(async (taskId) => {
+      const token = localStorage.getItem('access_token');
+      if (!token || !taskId) return;
+      try {
+          const response = await authenticatedFetch(`${API_BASE_URL}/task-time-entries/?task_id=${taskId}`, {
+              headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (response.ok) {
+              const data = await response.json();
+              setTaskTimeEntries(data);
+          } else {
+              console.error(`Failed to fetch time entries for task ${taskId}:`, response.statusText);
+              setTaskTimeEntries([]);
+              setMessage(`Failed to load time entries: ${response.statusText}`);
+          }
+      } catch (error) {
+          console.error(`Error fetching time entries for task ${taskId}:`, error);
+          setTaskTimeEntries([]);
+          setMessage(`Network error fetching time entries.`);
+      } finally {
+          setTimeout(() => setMessage(''), 5000);
+      }
+  }, []);
+
+  // Handle form submission for new time entry
+  const handleTimeEntrySubmit = async (e) => {
+      e.preventDefault();
+      setTimeEntryError('');
+      setTimeEntrySuccess('');
+
+      if (!selectedTaskId) {
+          setTimeEntryError('No task selected.');
+          return;
+      }
+
+      if (!newTimeEntryStartTime || !newTimeEntryEndTime || !newTimeEntryDescription) {
+          setTimeEntryError('All fields are required.');
+          return;
+      }
+
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+          setTimeEntryError('Authentication required.');
+          return;
+      }
+
+      try {
+          // Format dates to ISO 8601 string for Django
+          // moment().toISOString() will include timezone offset, which Django's DateTimeField expects
+          const formattedStartTime = moment(newTimeEntryStartTime).toISOString();
+          const formattedEndTime = moment(newTimeEntryEndTime).toISOString();
+
+          const response = await authenticatedFetch(`${API_BASE_URL}/task-time-entries/`, {
+              method: 'POST',
+              body: JSON.stringify({
+                  task: selectedTaskId,
+                  start_time: formattedStartTime,
+                  end_time: formattedEndTime,
+                  description: newTimeEntryDescription,
+              }),
+          });
+
+          if (response.ok) {
+              setTimeEntrySuccess('Time entry added successfully!');
+              // Clear form fields
+              setNewTimeEntryStartTime('');
+              setNewTimeEntryEndTime('');
+              setNewTimeEntryDescription('');
+              // Re-fetch time entries to update the list
+              fetchTaskTimeEntries(selectedTaskId);
+          } else {
+              const errorData = await response.json();
+              setTimeEntryError(errorData.detail || 'Failed to add time entry.');
+              console.error('Failed to add time entry:', errorData);
+          }
+      } catch (error) {
+          setTimeEntryError('Network error or invalid data.');
+          console.error('Error adding time entry:', error);
+      } finally {
+          setTimeout(() => { setTimeEntryError(''); setTimeEntrySuccess(''); }, 5000);
+      }
+  };
+
+  // Effect to fetch task details and time entries when selectedTaskId changes
+  useEffect(() => {
+      if (selectedTaskId) {
+          fetchTaskDetails(selectedTaskId);
+          fetchTaskTimeEntries(selectedTaskId);
+      }
+  }, [selectedTaskId, fetchTaskDetails, fetchTaskTimeEntries]);
+
+
   const renderContent = () => {
     if (!isAuthenticated) {
       if (currentPage === 'register') {
@@ -3236,10 +3714,98 @@ function App() {
       } else { // currentPage === 'login'
         return <Login onLogin={handleLogin} onGoToRegister={() => setCurrentPage('register')} onGoToAdminLogin={() => setCurrentPage('admin-login')} />;
       }
+    } else if (selectedTaskId) { // NEW: Render TaskDetailView if a task is selected
+        return (
+            <div className="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-3xl mx-auto text-white">
+                <button onClick={() => setSelectedTaskId(null) || setCurrentPage(userRole === 'admin' ? 'admin' : 'user')}
+                        className="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 transition duration-300 mb-6">
+                    &larr; Back to Dashboard
+                </button>
+
+                {selectedTask ? (
+                    <>
+                        <h2 className="text-3xl font-bold mb-4 text-blue-400">{selectedTask.name}</h2> {/* Changed from title to name */}
+                        <p className="text-gray-300 mb-4">{selectedTask.description}</p>
+                        <p className="text-gray-400 text-sm mb-6">
+                            Due: {selectedTask.due_date || 'N/A'} | Status: {selectedTask.status} | Progress: {selectedTask.progress}%
+                        </p>
+                        <p className="text-gray-400 text-sm mb-6">
+                            Assigned To: {selectedTask.assigned_to_username || 'N/A'} | Project: {selectedTask.project_name || 'N/A'}
+                            {selectedTask.parent_task_name && ` | Parent: ${selectedTask.parent_task_name}`}
+                        </p>
+
+                        <hr className="border-gray-700 my-6" />
+
+                        <h3 className="text-2xl font-bold mb-4 text-blue-300">Log Hourly Time</h3>
+                        {timeEntryError && <p className="text-red-400 mb-4">{timeEntryError}</p>}
+                        {timeEntrySuccess && <p className="text-green-400 mb-4">{timeEntrySuccess}</p>}
+                        <form onSubmit={handleTimeEntrySubmit} className="space-y-4">
+                            <div>
+                                <label htmlFor="startTime" className="block text-gray-400 text-sm font-bold mb-2">Start Time:</label>
+                                <input
+                                    type="datetime-local"
+                                    id="startTime"
+                                    value={newTimeEntryStartTime}
+                                    onChange={(e) => setNewTimeEntryStartTime(e.target.value)}
+                                    className="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label htmlFor="endTime" className="block text-gray-400 text-sm font-bold mb-2">End Time:</label>
+                                <input
+                                    type="datetime-local"
+                                    id="endTime"
+                                    value={newTimeEntryEndTime}
+                                    onChange={(e) => setNewTimeEntryEndTime(e.target.value)}
+                                    className="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label htmlFor="description" className="block text-gray-400 text-sm font-bold mb-2">What did you do?</label>
+                                <textarea
+                                    id="description"
+                                    value={newTimeEntryDescription}
+                                    onChange={(e) => setNewTimeEntryDescription(e.target.value)}
+                                    className="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 h-24 text-white"
+                                    placeholder="e.g., Coded login functionality, Reviewed PR"
+                                    required
+                                ></textarea>
+                            </div>
+                            <button type="submit" className="w-full p-3 rounded-lg bg-green-600 hover:bg-green-700 transition duration-300 font-semibold">
+                                Add Time Entry
+                            </button>
+                        </form>
+
+                        <hr className="border-gray-700 my-6" />
+
+                        <h3 className="text-2xl font-bold mb-4 text-blue-300">Logged Time for This Task</h3>
+                        {taskTimeEntries.length > 0 ? (
+                            <ul className="space-y-4">
+                                {taskTimeEntries.map(entry => (
+                                    <li key={entry.id} className="bg-gray-700 p-4 rounded-lg shadow-md">
+                                        <p className="text-lg font-semibold text-blue-200">
+                                            {moment(entry.start_time).format('MMM D,YYYY HH:mm')} - {moment(entry.end_time).format('HH:mm')}
+                                        </p>
+                                        <p className="text-gray-300">Duration: {entry.duration_minutes.toFixed(0)} minutes ({entry.duration_hours.toFixed(2)} hours)</p>
+                                        <p className="text-gray-400 text-sm mt-2">{entry.description}</p>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <p className="text-gray-400">No time entries logged for this task yet.</p>
+                        )}
+                    </>
+                ) : (
+                    <p className="text-center text-gray-400">Loading task details...</p>
+                )}
+            </div>
+        );
     } else if (userRole === 'admin') {
-      return <AdminDashboard userId={userId} openConfirmModal={openConfirmModal} />;
-    } else {
-      return <UserDashboard userId={userId} openConfirmModal={openConfirmModal} />;
+      return <AdminDashboard userId={userId} openConfirmModal={openConfirmModal} viewTaskDetails={viewTaskDetails} />;
+    } else { // userRole === 'user'
+      return <UserDashboard userId={userId} openConfirmModal={openConfirmModal} viewTaskDetails={viewTaskDetails} />;
     }
   };
 
