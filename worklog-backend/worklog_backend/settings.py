@@ -10,21 +10,17 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
-import dj_database_url # ADDED: Import for parsing DATABASE_URL
+import dj_database_url
 from pathlib import Path
 from datetime import timedelta
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
-
 # SECURITY WARNING: keep the secret key used in production secret!
 # IMPORTANT: Read SECRET_KEY from environment variable. Provide a fallback for local development.
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-w2cg8wjk$z+-^a$^l4#okn@0ohl08(z7+me)fa(f#ais-381iq')
-# In Render, you MUST set SECRET_KEY as an environment variable.
+# In Render, you MUST set SECRET_KEY as an environment variable in your service settings.
 
 # SECURITY WARNING: don't run with debug turned on in production!
 # IMPORTANT: Control DEBUG via an environment variable. Default to True for local dev.
@@ -32,13 +28,10 @@ DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
 # IMPORTANT: For production, ALLOWED_HOSTS must include your Render service's public URL.
 # RENDER_EXTERNAL_HOSTNAME is automatically provided by Render.
-# We'll read it from an environment variable.
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
-# Example for Render Environment Variable: DJANGO_ALLOWED_HOSTS = "worklog-backend-api-new.onrender.com"
-# For local development, it will default to '127.0.0.1', 'localhost'
+# Set DJANGO_ALLOWED_HOSTS environment variable on Render to: worklog-cuej.onrender.com
 
 # Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -46,12 +39,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework',      # Add Django REST Framework
-    'rest_framework_simplejwt', # Add Simple JWT for token authentication
-    'core',                # Add your 'core' app (ENSURE THIS IS HERE)
-    'corsheaders',         # Add CORS headers app
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'core',
+    'corsheaders',
     'rest_framework_simplejwt.token_blacklist',
-    'whitenoise.runserver_nostatic', # ADDED: For Whitenoise during local development (optional, but good)
+    'whitenoise.runserver_nostatic',
 ]
 
 MIDDLEWARE = [
@@ -75,7 +68,7 @@ TEMPLATES = [
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
-                'django.template.context_processors.debug', # ADDED: Important for debug mode
+                'django.template.context_processors.debug',
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
@@ -86,10 +79,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'worklog_backend.wsgi.application'
 
-
 # Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
 # IMPORTANT: Default to SQLite for local development
 DATABASES = {
     'default': {
@@ -99,17 +89,11 @@ DATABASES = {
 }
 
 # IMPORTANT: Override database settings for production using DATABASE_URL from Render
-# This will automatically pick up the PostgreSQL database linked on Render
 if 'DATABASE_URL' in os.environ:
     DATABASES['default'] = dj_database_url.config(
-        conn_max_age=600, # Keep database connections alive for 10 minutes
+        conn_max_age=600,
         ssl_require=True # REQUIRED for Render PostgreSQL connections
     )
-    # If using Render's auto-injected DATABASE_URL, you don't need to manually set other DB parameters.
-
-
-# Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -126,97 +110,71 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
-# Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
-
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
-
-
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
 # IMPORTANT: Define STATIC_ROOT for collectstatic to work in production
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
 # IMPORTANT: Configure Whitenoise to serve static files efficiently in production
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-
-
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS settings
-# IMPORTANT: Add your Render frontend URL here
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    # ADD YOUR RENDER FRONTEND URL HERE (e.g., https://worklog-frontend-yourname.onrender.com)
-    # Example: "https://worklog-frontend-abc.onrender.com",
+    "https://worklog-961f.vercel.app", # <--- YOUR VERCEL FRONTEND URL
 ]
-# CORS_ALLOWED_ORIGIN_REGEXES is generally not needed if you list explicit origins.
-# If you keep it, ensure it covers your Render frontend URL.
+
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://localhost:\d+$",
     r"^http://127\.0\.0\.1:\d+$",
-    # ADD REGEX FOR YOUR RENDER FRONTEND URL IF NEEDED (e.g., r"^https://.*\.onrender\.com$")
+    r"^https://.*\.vercel\.app$", # Covers preview deployments on Vercel
 ]
 CORS_ALLOW_CREDENTIALS = True
 
 # CSRF Trusted Origins: Important for allowing your frontend to send CSRF tokens
-# IMPORTANT: Add your Render frontend URL and backend URL here
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://127.0.0.1:8000", # Add if your Django is on 8000
-    "http://localhost:8000", # Add if your Django is on 8000
-    # ADD YOUR RENDER FRONTEND URL HERE (e.g., https://worklog-frontend-yourname.onrender.com)
-    # Example: "https://worklog-frontend-abc.onrender.com",
-    # ADD YOUR RENDER BACKEND URL HERE (e.g., https://worklog-backend-api-new.onrender.com)
-    # Example: "https://worklog-backend-api-xyz.onrender.com",
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "https://worklog-961f.vercel.app", # <--- YOUR VERCEL FRONTEND URL
+    "https://worklog-cuej.onrender.com", # <--- YOUR RENDER BACKEND URL
 ]
 
-# Cookie settings - generally fine, but ensure they don't conflict with HTTPS in production
-# For production, SESSION_COOKIE_SECURE and CSRF_COOKIE_SECURE should be True
 SESSION_COOKIE_DOMAIN = None
 CSRF_COOKIE_DOMAIN = None
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SECURE = False # Set to True in production with HTTPS
-CSRF_COOKIE_SECURE = False    # Set to True in production with HTTPS
+SESSION_COOKIE_SECURE = True # <--- Set to True for production (HTTPS)
+CSRF_COOKIE_SECURE = True    # <--- Set to True for production (HTTPS)
 CSRF_COOKIE_HTTPONLY = False
 
 CSRF_USE_SESSIONS = True
 CSRF_COOKIE_NAME = 'csrftoken'
 CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
 
-# REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated', # Default: require authentication for APIs
+        'rest_framework.permissions.IsAuthenticated',
     ],
 }
 
-# Simple JWT settings
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY, # Use the same SECRET_KEY for JWT signing
+    'SIGNING_KEY': SECRET_KEY,
     'VERIFYING_KEY': None,
     'AUDIENCE': None,
     'ISSUER': None,
@@ -229,7 +187,5 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
     'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
-
-    # THIS IS THE ABSOLUTELY CRITICAL LINE TO ADD/CHANGE
     'TOKEN_OBTAIN_PAIR_RESPONSE_SERIALIZER': 'core.serializers.MyTokenObtainPairSerializer',
 }
