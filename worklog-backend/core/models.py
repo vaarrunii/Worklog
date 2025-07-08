@@ -1,7 +1,6 @@
-# worklog_backend/core/models.py
-
 from django.db import models
 from django.contrib.auth import get_user_model # Use get_user_model for custom user models
+from datetime import timedelta # NEW: Import timedelta for duration calculation
 
 User = get_user_model() # Get the active user model
 
@@ -94,3 +93,37 @@ class LeaveRequest(models.Model):
 
     def __str__(self):
         return f"{self.user.username}'s {self.leave_type} request from {self.start_date} ({self.status})"
+
+# --- NEW MODEL: TaskTimeEntry ---
+class TaskTimeEntry(models.Model):
+    """
+    Model to store hourly time entries for a specific task.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='task_time_entries')
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='time_entries')
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+    description = models.TextField(blank=True, null=True, help_text="What was done during this time slot?")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def duration_minutes(self):
+        """Calculates the duration of the entry in minutes."""
+        if self.start_time and self.end_time:
+            duration = self.end_time - self.start_time
+            return duration.total_seconds() / 60
+        return 0
+
+    @property
+    def duration_hours(self):
+        """Calculates the duration of the entry in hours."""
+        return self.duration_minutes / 60
+
+    def __str__(self):
+        # Use task.name instead of task.title, as your Task model has 'name'
+        return f"{self.user.username} - {self.task.name}: {self.start_time.strftime('%Y-%m-%d %H:%M')} to {self.end_time.strftime('%H:%M')}"
+
+    class Meta:
+        ordering = ['start_time']
+        verbose_name_plural = "Task Time Entries"

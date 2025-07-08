@@ -1,16 +1,17 @@
-# worklog_backend/core/views.py
+# worklog-backend/core/views.py
 
-from rest_framework import viewsets, status
+from rest_framework import viewsets, generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth import get_user_model
 from django.db.models import Q # Import Q for complex lookups
 
-from .models import Project, Task, TimesheetEntry, LeaveRequest
+from .models import Project, Task, TimesheetEntry, LeaveRequest, TaskTimeEntry # NEW: Import TaskTimeEntry model
 from .serializers import (
     UserSerializer, ProjectSerializer, TaskSerializer,
-    TimesheetEntrySerializer, LeaveRequestSerializer
+    TimesheetEntrySerializer, LeaveRequestSerializer,
+    TaskTimeEntrySerializer # NEW: Import TaskTimeEntrySerializer
 )
 from .permissions import IsAssignedUserOrAdmin # Import your custom permission
 
@@ -66,7 +67,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         """
         if self.request.user.is_staff:
             return Task.objects.all()
-        
+
         # For regular users, return tasks assigned to them OR tasks they created
         # (This covers the 'My Tasks' feature where users create their own tasks)
         return Task.objects.filter(Q(assigned_to=self.request.user) | Q(created_by=self.request.user)).distinct()
@@ -192,11 +193,11 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             # Regular user trying to update
             if serializer.instance.user != self.request.user:
                 raise permissions.PermissionDenied("You do not have permission to update this leave request.")
-            
+
             # Prevent regular users from changing status if it's not pending
             if serializer.instance.status != 'pending' and 'status' in serializer.validated_data and serializer.validated_data['status'] != serializer.instance.status:
                 raise permissions.PermissionDenied("You cannot change the status of an already processed leave request.")
-            
+
             # Prevent regular users from setting admin_comments or approved_by
             if 'admin_comments' in serializer.validated_data or 'approved_by' in serializer.validated_data:
                 raise permissions.PermissionDenied("You cannot set admin comments or approved by user.")
@@ -211,3 +212,83 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
             raise permissions.PermissionDenied("You do not have permission to delete this leave request.")
         instance.delete()
 
+
+# --- NEW VIEWS FOR TASK TIME ENTRIES ---
+class TaskTimeEntryListCreateView(generics.ListCreateAPIView):
+    """
+    API view to list all time entries for the authenticated user
+    or create a new time entry.
+    Can also filter by task.
+    """
+    serializer_class = TaskTimeEntrySerializer
+    permission_classes = [permissions.IsAuthenticated] # Ensure permissions.IsAuthenticated is imported
+
+    def get_queryset(self):
+        queryset = TaskTimeEntry.objects.filter(user=self.request.user)
+        task_id = self.request.query_params.get('task_id')
+        if task_id:
+            queryset = queryset.filter(task__id=task_id)
+        return queryset
+
+    def perform_create(self, serializer):
+        # The user is automatically set in the serializer's create method
+        serializer.save()
+
+class TaskTimeEntryRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API view to retrieve, update, or delete a specific time entry.
+    Ensures only the owner can access their entries.
+    """
+    serializer_class = TaskTimeEntrySerializer
+    permission_classes = [permissions.IsAuthenticated] # Ensure permissions.IsAuthenticated is imported
+
+    def get_queryset(self):
+        return TaskTimeEntry.objects.filter(user=self.request.user)
+class TaskTimeEntryListCreateView(generics.ListCreateAPIView):
+    """
+    API view to list all time entries for the authenticated user
+    or create a new time entry.
+    Admins can view all entries; regular users can only view their own.
+    Can also filter by task.
+    """
+    serializer_class = TaskTimeEntrySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Admins can see all time entries
+        if self.request.user.is_staff:
+            queryset = TaskTimeEntry.objects.all()
+        else:
+            # Regular users can only see their own time entries
+            queryset = TaskTimeEntry.objects.filter(user=self.request.user)
+
+        # Allow filtering by task_id for both admins and regular users
+        task_id = self.request.query_params.get('task_id')
+        if task_id:
+            queryset = queryset.filter(task__id=task_id)
+
+        # Allow filtering by user_id for admins
+        if self.request.user.is_staff:
+            user_id = self.request.query_params.get('user_id')
+            if user_id:
+                queryset = queryset.filter(user__id=user_id)
+
+        return queryset.order_by('-start_time') # Order by most recent first
+
+    def perform_create(self, serializer):
+        # The user is automatically set in the serializer's create method
+        serializer.save()
+
+class TaskTimeEntryRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API view to retrieve, update, or delete a specific time entry.
+    Ensures only the owner or admin can access their entries.
+    """
+    serializer_class = TaskTimeEntrySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # Admins can access any entry. Regular users can only access their own.
+        if self.request.user.is_staff:
+            return TaskTimeEntry.objects.all()
+        return TaskTimeEntry.objects.filter(user=self.request.user)

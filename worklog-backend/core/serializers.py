@@ -1,8 +1,7 @@
-# worklog_backend/core/serializers.py
-
 from rest_framework import serializers
 from django.contrib.auth import get_user_model # Use get_user_model for custom user models
-from .models import Project, Task, TimesheetEntry, LeaveRequest
+# NEW: Import TaskTimeEntry model
+from .models import Project, Task, TimesheetEntry, LeaveRequest, TaskTimeEntry
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer # Keep this import
 
 User = get_user_model() # Get the active user model
@@ -39,14 +38,14 @@ class ProjectSerializer(serializers.ModelSerializer):
 class TaskSerializer(serializers.ModelSerializer):
     project_name = serializers.CharField(source='project.name', read_only=True) # Changed from ReadOnlyField to CharField
     assigned_to_username = serializers.CharField(source='assigned_to.username', read_only=True) # Changed from ReadOnlyField to CharField
-    
+
     # Add a read-only field for subtasks.
     subtasks_ids = serializers.PrimaryKeyRelatedField(
         many=True,
         read_only=True,
         source='subtasks' # This refers to the related_name='subtasks' in the Task model
     )
-    
+
     # To display parent task name if it exists
     parent_task_name = serializers.CharField(source='parent_task.name', read_only=True) # Changed from ReadOnlyField to CharField
 
@@ -69,7 +68,7 @@ class TimesheetEntrySerializer(serializers.ModelSerializer):
     user_username = serializers.CharField(source='user.username', read_only=True) # Changed from ReadOnlyField to CharField
     task_name = serializers.CharField(source='task.name', read_only=True) # Changed from ReadOnlyField to CharField
     project_name = serializers.CharField(source='task.project.name', read_only=True) # Access project name via task
-    
+
     # Add fields to represent the task hierarchy in the timesheet entry
     task_parent_task_id = serializers.IntegerField(source='task.parent_task.id', read_only=True) # Changed to IntegerField
     task_parent_task_name = serializers.CharField(source='task.parent_task.name', read_only=True) # Changed to CharField
@@ -131,3 +130,34 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['is_admin'] = self.user.is_staff # This is the critical line for the frontend's logic
 
         return data
+
+# --- NEW SERIALIZER: TaskTimeEntrySerializer ---
+class TaskTimeEntrySerializer(serializers.ModelSerializer):
+    """
+    Serializer for TaskTimeEntry model.
+    Includes read-only fields for duration.
+    """
+    duration_minutes = serializers.ReadOnlyField()
+    duration_hours = serializers.ReadOnlyField()
+    task_name = serializers.CharField(source='task.name', read_only=True) # To display task name (using 'name' from Task model)
+    user_username = serializers.CharField(source='user.username', read_only=True) # To display user's username
+
+    class Meta:
+        model = TaskTimeEntry
+        fields = ['id', 'task', 'user', 'start_time', 'end_time', 'description',
+                  'duration_minutes', 'duration_hours', 'task_name', 'user_username', 'created_at', 'updated_at']
+        read_only_fields = ['user', 'created_at', 'updated_at']
+
+    def validate(self, data):
+        """
+        Check that the start time is before the end time.
+        """
+        if data['start_time'] >= data['end_time']:
+            raise serializers.ValidationError("End time must be after start time.")
+        return data
+
+    def create(self, validated_data):
+        # Automatically set the user to the currently authenticated user
+        if 'request' in self.context and hasattr(self.context['request'], 'user'):
+            validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)

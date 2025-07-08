@@ -2,7 +2,11 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from core import views # Assuming your views are in core/views.py
+# Assuming your views are in core/views.py. Make sure these imports are correct.
+from core.views import (
+    UserViewSet, ProjectViewSet, TaskViewSet, TimesheetEntryViewSet, LeaveRequestViewSet,
+    TaskTimeEntryListCreateView, TaskTimeEntryRetrieveUpdateDestroyView # NEW: Import TaskTimeEntry views
+)
 from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenBlacklistView, # Import TokenBlacklistView for logout
@@ -21,27 +25,25 @@ class CustomTokenObtainPairView(OriginalTokenObtainPairView):
 
 # Create a router and register our viewsets with it.
 router = DefaultRouter()
-router.register(r'users', views.UserViewSet)
-router.register(r'projects', views.ProjectViewSet)
-router.register(r'tasks', views.TaskViewSet)
-router.register(r'timesheets', views.TimesheetEntryViewSet)
-router.register(r'leave-requests', views.LeaveRequestViewSet)
+router.register(r'users', UserViewSet) # Use UserViewSet directly
+router.register(r'projects', ProjectViewSet) # Use ProjectViewSet directly
+router.register(r'tasks', TaskViewSet) # Use TaskViewSet directly
+router.register(r'timesheets', TimesheetEntryViewSet) # Use TimesheetEntryViewSet directly
+router.register(r'leave-requests', LeaveRequestViewSet) # Use LeaveRequestViewSet directly
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)), # Include DRF router URLs for users, projects, tasks, timesheets, leave-requests
-    
+
     # Simple JWT Token Endpoints
     # The 'api/token/' path handles login (obtaining tokens)
     path('api/token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    
+
     # Logout endpoint (blacklists the refresh token)
     path('api/logout/', TokenBlacklistView.as_view(), name='token_blacklist'), # Use TokenBlacklistView directly
-]
 
-# Note: The paths for 'api/login/', 'api/current-user/', and 'api/register/'
-# are removed here because their functionality is covered by:
-# - 'api/token/' for login (token obtain)
-# - 'api/users/' (UserViewSet) for user registration (POST) and current user details (GET /api/users/<id>/)
-# - 'api/logout/' (TokenBlacklistView) for logout
+    # NEW: Explicitly add URL patterns for TaskTimeEntry views
+    path('api/task-time-entries/', TaskTimeEntryListCreateView.as_view(), name='task-time-entry-list-create'),
+    path('api/task-time-entries/<int:pk>/', TaskTimeEntryRetrieveUpdateDestroyView.as_view(), name='task-time-entry-retrieve-update-destroy'),
+]
