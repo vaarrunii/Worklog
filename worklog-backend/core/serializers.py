@@ -15,16 +15,25 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    # ADDED: Make is_staff an optional field for registration.
+    # It's write_only so it's not returned in the response after creation.
+    # required=False allows the frontend to omit it for regular users.
+    is_staff = serializers.BooleanField(default=False, write_only=True, required=False)
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password']
+        fields = ['username', 'email', 'password', 'is_staff'] # Include is_staff in fields
 
     def create(self, validated_data):
+        # Extract is_staff from validated_data. If not provided, default to False.
+        is_staff = validated_data.pop('is_staff', False)
+
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
-            password=validated_data['password']
+            password=validated_data['password'],
+            is_staff=is_staff, # Use the extracted is_staff value here
+            is_active=True # Ensure user is always active on creation
         )
         return user
 
@@ -36,60 +45,53 @@ class ProjectSerializer(serializers.ModelSerializer):
 
 # --- UPDATED Task Serializer for sub-tasks (MODIFIED) ---
 class TaskSerializer(serializers.ModelSerializer):
-    project_name = serializers.CharField(source='project.name', read_only=True) # Changed from ReadOnlyField to CharField
-    assigned_to_username = serializers.CharField(source='assigned_to.username', read_only=True) # Changed from ReadOnlyField to CharField
+    project_name = serializers.CharField(source='project.name', read_only=True)
+    assigned_to_username = serializers.CharField(source='assigned_to.username', read_only=True)
 
-    # Add a read-only field for subtasks.
     subtasks_ids = serializers.PrimaryKeyRelatedField(
         many=True,
         read_only=True,
-        source='subtasks' # This refers to the related_name='subtasks' in the Task model
+        source='subtasks'
     )
 
-    # To display parent task name if it exists
-    parent_task_name = serializers.CharField(source='parent_task.name', read_only=True) # Changed from ReadOnlyField to CharField
+    parent_task_name = serializers.CharField(source='parent_task.name', read_only=True)
 
-    created_by_username = serializers.CharField(source='created_by.username', read_only=True) # <-- ADDED THIS FIELD
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True)
 
     class Meta:
         model = Task
         fields = [
             'id', 'project', 'project_name', 'name', 'description',
             'assigned_to', 'assigned_to_username',
-            'created_by', 'created_by_username', # <-- INCLUDE created_by fields here
+            'created_by', 'created_by_username',
             'due_date', 'status', 'progress', 'parent_task', 'parent_task_name',
             'subtasks_ids', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['created_by'] # created_by is set automatically by the view
+        read_only_fields = ['created_by']
 
 # --- UPDATED Timesheet Entry Serializer (MODIFIED) ---
 class TimesheetEntrySerializer(serializers.ModelSerializer):
-    # Read-only fields to display related object names
-    user_username = serializers.CharField(source='user.username', read_only=True) # Changed from ReadOnlyField to CharField
-    task_name = serializers.CharField(source='task.name', read_only=True) # Changed from ReadOnlyField to CharField
-    project_name = serializers.CharField(source='task.project.name', read_only=True) # Access project name via task
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    task_name = serializers.CharField(source='task.name', read_only=True)
+    project_name = serializers.CharField(source='task.project.name', read_only=True)
 
-    # Add fields to represent the task hierarchy in the timesheet entry
-    task_parent_task_id = serializers.IntegerField(source='task.parent_task.id', read_only=True) # Changed to IntegerField
-    task_parent_task_name = serializers.CharField(source='task.parent_task.name', read_only=True) # Changed to CharField
-
+    task_parent_task_id = serializers.IntegerField(source='task.parent_task.id', read_only=True)
+    task_parent_task_name = serializers.CharField(source='task.parent_task.name', read_only=True)
 
     class Meta:
         model = TimesheetEntry
-        fields = '__all__' # Includes all fields, including the new read-only ones
-        read_only_fields = ['user'] # User is set automatically by the view
+        fields = '__all__'
+        read_only_fields = ['user']
 
 # Existing Leave Request Serializer
 class LeaveRequestSerializer(serializers.ModelSerializer):
-    # Read-only fields to display related object names
-    user_username = serializers.CharField(source='user.username', read_only=True) # Changed from ReadOnlyField to CharField
-    approved_by_username = serializers.CharField(source='approved_by.username', read_only=True) # Changed from ReadOnlyField to CharField
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    approved_by_username = serializers.CharField(source='approved_by.username', read_only=True)
 
     class Meta:
         model = LeaveRequest
-        # Ensure 'is_hourly', 'start_time', 'end_time' are included in fields if not already
-        fields = '__all__' # Includes all fields, including the new read-only ones
-        read_only_fields = ['user', 'status', 'admin_comments', 'approved_by'] # User set by view, status/comments by admin
+        fields = '__all__'
+        read_only_fields = ['user', 'status', 'admin_comments', 'approved_by']
 
 # --- JWT TOKEN RESPONSE SERIALIZER (KEEP THIS AS IS) ---
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -139,8 +141,8 @@ class TaskTimeEntrySerializer(serializers.ModelSerializer):
     """
     duration_minutes = serializers.ReadOnlyField()
     duration_hours = serializers.ReadOnlyField()
-    task_name = serializers.CharField(source='task.name', read_only=True) # To display task name (using 'name' from Task model)
-    user_username = serializers.CharField(source='user.username', read_only=True) # To display user's username
+    task_name = serializers.CharField(source='task.name', read_only=True)
+    user_username = serializers.CharField(source='user.username', read_only=True)
 
     class Meta:
         model = TaskTimeEntry
