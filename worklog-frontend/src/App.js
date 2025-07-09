@@ -4,10 +4,8 @@ import 'react-calendar/dist/Calendar.css'; // Default styles for react-calendar
 import moment from 'moment'; // Import moment for date/time handling
 
 // Define your Django API base URL
-// IMPORTANT: Adjust this port to match the port your Django backend is running on (e.g., 8000 or 8001)
-// For local development, use: 'http://127.0.0.1:8000/api'
-// For Render deployment, use: 'https://worklog-72ei.onrender.com/api'
-const API_BASE_URL = 'https://worklog-cuej.onrender.com/api'; // <--- **THIS IS THE CRITICAL CHANGE**
+// IMPORTANT: This must be your deployed Render backend URL
+const API_BASE_URL =  'https://worklog-cuej.onrender.com/api';
 
 
 // Helper function to make authenticated API calls with JWT token
@@ -286,6 +284,7 @@ function Register({ onRegisterSuccess, onGoToLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [makeAdmin, setMakeAdmin] = useState(false); // NEW STATE: For admin checkbox
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -307,7 +306,12 @@ function Register({ onRegisterSuccess, onGoToLogin }) {
       const response = await fetch(`${API_BASE_URL}/users/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password }),
+        body: JSON.stringify({
+          username,
+          email,
+          password,
+          is_staff: makeAdmin // NEW: Send is_staff flag to backend
+        }),
       });
 
       if (response.ok) {
@@ -398,6 +402,21 @@ function Register({ onRegisterSuccess, onGoToLogin }) {
             disabled={isLoading}
           />
         </div>
+        {/* NEW ADMIN CHECKBOX */}
+        <div className="mb-6 flex items-center">
+          <input
+            type="checkbox"
+            id="makeAdmin"
+            className="mr-2 h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+            checked={makeAdmin}
+            onChange={(e) => setMakeAdmin(e.target.checked)}
+            disabled={isLoading}
+          />
+          <label htmlFor="makeAdmin" className="text-gray-700 text-sm font-bold">
+            Register as Admin (for testing only, uncheck for regular users)
+          </label>
+        </div>
+        {/* END NEW ADMIN CHECKBOX */}
         <div className="flex flex-col items-center justify-between gap-4">
           <button
             type="submit"
@@ -1493,6 +1512,23 @@ function Reporting({ userId }) {
               <option key={project.id} value={project.id}>
                 {project.name}
               </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex-1 min-w-[200px]">
+          <label htmlFor="reportTaskSelect" className="block text-gray-700 text-sm font-bold mb-2">
+            Filter by Task
+          </label>
+          <select
+            id="reportTaskSelect"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-teal-200"
+            value={selectedTask}
+            onChange={(e) => setSelectedTask(e.target.value)}
+            disabled={isLoading || filteredTasksForDropdown().length === 0}
+          >
+            <option value="">All Tasks</option>
+            {filteredTasksForDropdown().map(task => (
+              <option key={task.id} value={task.id}>{task.name}</option>
             ))}
           </select>
         </div>
@@ -3725,7 +3761,7 @@ function App() {
 
                 {selectedTask ? (
                     <>
-                        <h2 className="text-3xl font-bold mb-4 text-blue-400">{selectedTask.name}</h2> {/* Changed from title to name */}
+                        <h2 className="text-3xl font-bold mb-4 text-blue-400">{selectedTask.name}</h2>
                         <p className="text-gray-300 mb-4">{selectedTask.description}</p>
                         <p className="text-gray-400 text-sm mb-6">
                             Due: {selectedTask.due_date || 'N/A'} | Status: {selectedTask.status} | Progress: {selectedTask.progress}%
