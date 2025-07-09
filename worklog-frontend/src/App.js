@@ -1067,7 +1067,7 @@ function UserManagement({ userId, openConfirmModal }) {
   const [isLoading, setIsLoading] = useState(false);
 
   const [newUsername, setNewUsername] = useState('');
-  const [newEmail, setNewEmail] = useState(''); // ADDED: State for new user email
+  const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newConfirmPassword, setNewConfirmPassword] = useState('');
   const [isNewUserStaff, setIsNewUserStaff] = useState(false);
@@ -1104,7 +1104,7 @@ function UserManagement({ userId, openConfirmModal }) {
       setMessage('Passwords do not match.');
       return;
     }
-    if (!newUsername.trim() || !newEmail.trim() || !newPassword.trim()) { // ADDED: Check for newEmail
+    if (!newUsername.trim() || !newEmail.trim() || !newPassword.trim()) {
       setMessage('Please fill all required fields.');
       return;
     }
@@ -1118,7 +1118,7 @@ function UserManagement({ userId, openConfirmModal }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: newUsername,
-          email: newEmail, // ADDED: Send email in payload
+          email: newEmail,
           password: newPassword,
           is_staff: isNewUserStaff
         }),
@@ -1127,7 +1127,7 @@ function UserManagement({ userId, openConfirmModal }) {
       if (response.ok) {
         setMessage('User created successfully!');
         setNewUsername('');
-        setNewEmail(''); // Clear email field
+        setNewEmail('');
         setNewPassword('');
         setNewConfirmPassword('');
         setIsNewUserStaff(false);
@@ -1153,6 +1153,37 @@ function UserManagement({ userId, openConfirmModal }) {
     }
   };
 
+  const handleDeleteUser = (userToDeleteId, usernameToDelete) => {
+    // Prevent admin from deleting themselves
+    if (userToDeleteId === userId) {
+      setMessage("You cannot delete your own admin account.");
+      setTimeout(() => setMessage(''), 5000);
+      return;
+    }
+
+    openConfirmModal(`Are you sure you want to delete user "${usernameToDelete}"? This action cannot be undone.`, async () => {
+      setIsLoading(true);
+      try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/users/${userToDeleteId}/`, {
+          method: 'DELETE',
+        });
+
+        if (response.ok) {
+          setMessage(`User "${usernameToDelete}" deleted successfully!`);
+          fetchUsers(); // Re-fetch the user list
+        } else {
+          const errorData = await response.json();
+          setMessage(`Failed to delete user: ${errorData.detail || 'Unknown error'}`);
+        }
+      } catch (error) {
+        console.error('Error deleting user:', error);
+        setMessage('Network error while deleting user.');
+      } finally {
+        setIsLoading(false);
+        setTimeout(() => setMessage(''), 5000);
+      }
+    });
+  };
 
   return (
     <div className="p-4 bg-white rounded-lg shadow-inner">
@@ -1180,7 +1211,7 @@ function UserManagement({ userId, openConfirmModal }) {
           />
         </div>
         <div className="mb-4">
-          <label htmlFor="newEmail" className="block text-gray-700 text-sm font-bold mb-2"> {/* ADDED: Email field */}
+          <label htmlFor="newEmail" className="block text-gray-700 text-sm font-bold mb-2">
             Email
           </label>
           <input
@@ -1256,6 +1287,18 @@ function UserManagement({ userId, openConfirmModal }) {
                 <p className="font-semibold text-lg text-purple-800">{user.username} {user.is_staff && <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-200 text-purple-800">Admin</span>}</p>
                 <p className="text-gray-600 text-sm">{user.email}</p>
               </div>
+              {/* Added Delete Button for Users */}
+              <button
+                onClick={() => handleDeleteUser(user.id, user.username)}
+                className={`px-4 py-2 text-white rounded-lg transition duration-300 text-sm ${
+                  user.id === userId // Disable if it's the currently logged-in user
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-red-500 hover:bg-red-600'
+                }`}
+                disabled={isLoading || user.id === userId} // Disable while loading or if it's self
+              >
+                Delete
+              </button>
             </li>
           ))}
         </ul>
@@ -1816,13 +1859,154 @@ function CalendarView({ userId, userRole, viewTaskDetails }) { // Added viewTask
           <span className="block sm:inline">{message}</span>
         </div>
       )}
+      {/* Custom CSS for react-calendar */}
+      <style>
+        {`
+          .custom-calendar {
+            width: 100%;
+            max-width: 900px; /* Increased max-width for bigger calendar */
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem; /* rounded-lg */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
+            font-family: 'Inter', sans-serif;
+            background-color: #ffffff;
+            padding: 1.5rem; /* p-6 */
+          }
+
+          .custom-calendar .react-calendar__navigation {
+            display: flex;
+            margin-bottom: 1rem;
+            background-color: #f8fafc; /* gray-50 */
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+          }
+
+          .custom-calendar .react-calendar__navigation button {
+            min-width: 44px;
+            background: none;
+            font-size: 1.25rem; /* text-xl */
+            font-weight: 600; /* font-semibold */
+            color: #4a5568; /* gray-700 */
+            border-radius: 0.375rem;
+            transition: background-color 0.2s, color 0.2s;
+            padding: 0.5rem;
+            margin: 0 0.25rem;
+          }
+
+          .custom-calendar .react-calendar__navigation button:hover {
+            background-color: #e2e8f0; /* gray-200 */
+            color: #2d3748; /* gray-800 */
+          }
+
+          .custom-calendar .react-calendar__navigation button:disabled {
+            background-color: #edf2f7; /* gray-100 */
+            color: #a0aec0; /* gray-400 */
+            cursor: not-allowed;
+          }
+
+          .custom-calendar .react-calendar__navigation__label {
+            flex-grow: 1;
+            text-align: center;
+            font-size: 1.25rem; /* text-xl */
+            font-weight: 700; /* font-bold */
+            color: #2d3748; /* gray-800 */
+            padding: 0.5rem;
+          }
+
+          .custom-calendar .react-calendar__month-view__weekdays {
+            text-align: center;
+            text-transform: uppercase;
+            font-weight: 600; /* font-semibold */
+            font-size: 0.875rem; /* text-sm */
+            color: #4a5568; /* gray-700 */
+            margin-bottom: 0.5rem;
+          }
+
+          .custom-calendar .react-calendar__month-view__weekdays__weekday abbr {
+            text-decoration: none;
+          }
+
+          .custom-calendar .react-calendar__tile {
+            padding: 0.75rem 0.5rem; /* More padding for tiles */
+            text-align: center;
+            border-radius: 0.375rem; /* rounded-md */
+            transition: background-color 0.2s, color 0.2s;
+            position: relative;
+            min-height: 80px; /* Ensure enough height for content */
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: center;
+          }
+
+          .custom-calendar .react-calendar__tile:hover {
+            background-color: #f0f4f8; /* Light hover effect */
+          }
+
+          .custom-calendar .react-calendar__tile--now {
+            background-color: #e0f2f7; /* Light blue for today */
+            color: #2c5282; /* Darker blue text */
+            font-weight: bold;
+          }
+
+          .custom-calendar .react-calendar__tile--active {
+            background-color: #63b3ed; /* Blue for selected date */
+            color: white;
+            font-weight: bold;
+          }
+
+          .custom-calendar .react-calendar__tile--active:enabled:hover {
+            background-color: #4299e1; /* Darker blue on hover for selected */
+          }
+
+          .custom-calendar .react-calendar__tile--hasActive {
+            background-color: #bfdbfe; /* Light blue for dates with active content */
+          }
+
+          .custom-calendar .react-calendar__month-view__days__day--weekend {
+            color: #e53e3e; /* Red for weekends */
+          }
+
+          .custom-calendar .react-calendar__tile--range {
+            background: #a3bffa; /* Light purple for range selection */
+            color: white;
+          }
+
+          .custom-calendar .react-calendar__tile--rangeStart,
+          .custom-calendar .react-calendar__tile--rangeEnd {
+            border-radius: 0.375rem;
+            background: #667eea; /* Darker purple for range ends */
+            color: white;
+          }
+
+          .custom-calendar .react-calendar__tile:disabled {
+            background-color: #f7fafc; /* Lighter background for disabled dates */
+            color: #cbd5e0; /* Lighter text for disabled dates */
+            cursor: not-allowed;
+          }
+
+          .custom-calendar .react-calendar__tile .flex-col {
+            width: 100%;
+            margin-top: 0.25rem; /* mt-1 */
+          }
+
+          .custom-calendar .react-calendar__tile .flex-col > div {
+            padding: 0.125rem 0.25rem; /* px-0.5 py-0.5 */
+            border-radius: 0.125rem; /* rounded-sm */
+            font-size: 0.7rem; /* text-xs, slightly smaller for events */
+            line-height: 1;
+            margin-bottom: 0.125rem; /* my-0.5 */
+            box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); /* subtle shadow for events */
+          }
+        `}
+      </style>
       <div className="flex justify-center mb-8">
         <Calendar
           onChange={setDate}
           value={date}
           tileContent={tileContent}
-          className="rounded-lg shadow-lg border border-gray-300 p-6 w-full max-w-2xl custom-calendar"
-          // Custom class for react-calendar to apply more specific styles if needed
+          className="custom-calendar" // Use the custom class
         />
       </div>
 
@@ -3531,10 +3715,8 @@ function AdminDashboard({ userId, openConfirmModal, viewTaskDetails }) { // Adde
       ) : activeTab === 'leave-approval' ? (
         <LeaveApproval userId={userId} openConfirmModal={openConfirmModal} />
       ) : activeTab === 'reporting' ? (
-        // Using OldReporting for the "Reporting" tab
         <OldReporting userId={userId} />
       ) : activeTab === 'hourly-updates' ? (
-        // RENDER NEW HOURLY UPDATES COMPONENT
         <HourlyUpdatesReport userId={userId} />
       ) : (
         <CalendarView userId={userId} userRole="admin" viewTaskDetails={viewTaskDetails} />
