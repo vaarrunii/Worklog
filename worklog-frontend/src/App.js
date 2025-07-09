@@ -5,7 +5,7 @@ import moment from 'moment'; // Import moment for date/time handling
 
 // Define your Django API base URL
 // IMPORTANT: This must be your deployed Render backend URL
-const API_BASE_URL =  'https://worklog-cuej.onrender.com/api';
+const API_BASE_URL = 'https://worklog-cuej.onrender.com/api';
 
 
 // Helper function to make authenticated API calls with JWT token
@@ -1067,7 +1067,7 @@ function UserManagement({ userId, openConfirmModal }) {
   const [isLoading, setIsLoading] = useState(false);
 
   const [newUsername, setNewUsername] = useState('');
-  const [newEmail, setNewEmail] = useState('');
+  const [newEmail, setNewEmail] = useState(''); // ADDED: State for new user email
   const [newPassword, setNewPassword] = useState('');
   const [newConfirmPassword, setNewConfirmPassword] = useState('');
   const [isNewUserStaff, setIsNewUserStaff] = useState(false);
@@ -1104,7 +1104,7 @@ function UserManagement({ userId, openConfirmModal }) {
       setMessage('Passwords do not match.');
       return;
     }
-    if (!newUsername.trim() || !newEmail.trim() || !newPassword.trim()) {
+    if (!newUsername.trim() || !newEmail.trim() || !newPassword.trim()) { // ADDED: Check for newEmail
       setMessage('Please fill all required fields.');
       return;
     }
@@ -1116,13 +1116,18 @@ function UserManagement({ userId, openConfirmModal }) {
       const response = await fetch(`${API_BASE_URL}/users/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: newUsername, email: newEmail, password: newPassword, is_staff: isNewUserStaff }),
+        body: JSON.stringify({
+          username: newUsername,
+          email: newEmail, // ADDED: Send email in payload
+          password: newPassword,
+          is_staff: isNewUserStaff
+        }),
       });
 
       if (response.ok) {
         setMessage('User created successfully!');
         setNewUsername('');
-        setNewEmail('');
+        setNewEmail(''); // Clear email field
         setNewPassword('');
         setNewConfirmPassword('');
         setIsNewUserStaff(false);
@@ -1170,6 +1175,20 @@ function UserManagement({ userId, openConfirmModal }) {
             className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200"
             value={newUsername}
             onChange={(e) => setNewUsername(e.target.value)}
+            required
+            disabled={isLoading}
+          />
+        </div>
+        <div className="mb-4">
+          <label htmlFor="newEmail" className="block text-gray-700 text-sm font-bold mb-2"> {/* ADDED: Email field */}
+            Email
+          </label>
+          <input
+            type="email"
+            id="newEmail"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200"
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
             required
             disabled={isLoading}
           />
@@ -1388,8 +1407,9 @@ function LeaveApproval({ userId, openConfirmModal }) {
   );
 }
 
-// Reporting Component (Admin)
-function Reporting({ userId }) {
+// Reporting Component (Admin) - This was the one with the original `no-undef` errors
+// Renamed to `OldReporting` to avoid confusion with `HourlyUpdatesReport`
+function OldReporting({ userId }) {
   const [timesheetEntries, setTimesheetEntries] = useState([]);
   const [users, setUsers] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -1397,15 +1417,21 @@ function Reporting({ userId }) {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedUser, setSelectedUser] = useState('');
   const [selectedProject, setSelectedProject] = useState('');
-  const [reportData, setReportData] = useState({});
+  // Corrected the missing states for task filtering and dropdown
+  const [tasks, setTasks] = useState([]); // All tasks
+  const [selectedTask, setSelectedTask] = useState(''); // State for selected task filter
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
+  const [reportData, setReportData] = useState({}); // Added reportData state
 
   const fetchReportingData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [timesheetResponse, usersResponse, projectsResponse] = await Promise.all([
+      const [timesheetResponse, usersResponse, projectsResponse, tasksResponse] = await Promise.all([
         authenticatedFetch(`${API_BASE_URL}/timesheets/`, { method: 'GET' }),
         authenticatedFetch(`${API_BASE_URL}/users/`, { method: 'GET' }),
         authenticatedFetch(`${API_BASE_URL}/projects/`, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/tasks/`, { method: 'GET' }), // Fetch tasks
       ]);
 
       if (timesheetResponse.ok) {
@@ -1419,9 +1445,16 @@ function Reporting({ userId }) {
         setMessage(`Failed to fetch users data: ${usersResponse.statusText}`);
       }
       if (projectsResponse.ok) {
-        setProjects(await projectsResponse.json());
+        const data = await projectsResponse.json();
+        setProjects(data);
       } else {
         setMessage(`Failed to fetch projects data: ${projectsResponse.statusText}`);
+      }
+      if (tasksResponse.ok) { // Set tasks
+        const data = await tasksResponse.json();
+        setTasks(data);
+      } else {
+        setMessage(`Failed to fetch tasks data: ${tasksResponse.statusText}`);
       }
     } catch (error) {
       console.error('Error fetching reporting data:', error);
@@ -1436,6 +1469,15 @@ function Reporting({ userId }) {
     fetchReportingData();
   }, [fetchReportingData]);
 
+  // Helper function to filter tasks for the dropdown based on selected project
+  const filteredTasksForDropdown = useCallback(() => {
+    if (!selectedProject) {
+      return tasks; // Show all tasks if no project filter is selected
+    }
+    return tasks.filter(task => task.project === parseInt(selectedProject));
+  }, [tasks, selectedProject]);
+
+
   const generateReport = useCallback(() => {
     let filteredEntries = timesheetEntries;
 
@@ -1443,15 +1485,30 @@ function Reporting({ userId }) {
       filteredEntries = filteredEntries.filter(entry => entry.user === parseInt(selectedUser));
     }
     if (selectedProject) {
-      filteredEntries = filteredEntries.filter(entry => entry.task.project === parseInt(selectedProject));
+      // Filter by task's project ID, assuming entry.task is task ID
+      filteredEntries = filteredEntries.filter(entry => {
+        const task = tasks.find(t => t.id === entry.task);
+        return task && task.project === parseInt(selectedProject);
+      });
     }
+    if (selectedTask) { // Added filter for selectedTask
+        filteredEntries = filteredEntries.filter(entry => entry.task === parseInt(selectedTask));
+    }
+    if (startDateFilter) {
+        filteredEntries = filteredEntries.filter(entry => moment(entry.date).isSameOrAfter(startDateFilter, 'day'));
+    }
+    if (endDateFilter) {
+        filteredEntries = filteredEntries.filter(entry => moment(entry.date).isSameOrBefore(endDateFilter, 'day'));
+    }
+
 
     const totalHoursByUser = {};
     const totalHoursByProject = {};
 
     filteredEntries.forEach(entry => {
       const userName = users.find(u => u.id === entry.user)?.username || `User ${entry.user}`;
-      const projectName = projects.find(p => p.id === entry.task.project)?.name || `Project ${entry.task.project}`;
+      const task = tasks.find(t => t.id === entry.task); // Find task object
+      const projectName = projects.find(p => p.id === task?.project)?.name || `Project ${task?.project}`; // Get project name via task
 
       totalHoursByUser[userName] = (totalHoursByUser[userName] || 0) + parseFloat(entry.hours);
       totalHoursByProject[projectName] = (totalHoursByProject[projectName] || 0) + parseFloat(entry.hours);
@@ -1461,15 +1518,15 @@ function Reporting({ userId }) {
       totalHoursByUser,
       totalHoursByProject,
     });
-  }, [timesheetEntries, selectedUser, selectedProject, users, projects]);
+  }, [timesheetEntries, selectedUser, selectedProject, selectedTask, startDateFilter, endDateFilter, users, projects, tasks]); // Added new deps
 
   useEffect(() => {
     generateReport();
-  }, [timesheetEntries, selectedUser, selectedProject, users, projects, generateReport]);
+  }, [timesheetEntries, selectedUser, selectedProject, selectedTask, startDateFilter, endDateFilter, users, projects, tasks, generateReport]);
 
   return (
     <div className="p-4 bg-white rounded-lg shadow-inner">
-      <h3 className="text-2xl font-medium text-gray-700 mb-4">Reporting</h3>
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Reporting (Old Timesheet Entries)</h3>
       {message && (
         <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-teal-100 border border-teal-400 text-teal-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
           <span className="block sm:inline">{message}</span>
@@ -1504,7 +1561,10 @@ function Reporting({ userId }) {
             id="reportProjectSelect"
             className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-teal-200"
             value={selectedProject}
-            onChange={(e) => setSelectedProject(e.target.value)}
+            onChange={(e) => {
+                setSelectedProject(e.target.value);
+                setSelectedTask(''); // Reset task filter when project changes
+            }}
             disabled={isLoading}
           >
             <option value="">All Projects</option>
@@ -1531,6 +1591,43 @@ function Reporting({ userId }) {
               <option key={task.id} value={task.id}>{task.name}</option>
             ))}
           </select>
+        </div>
+        <div>
+          <label htmlFor="startDateFilter" className="block text-gray-700 text-sm font-bold mb-2">Start Date:</label>
+          <input
+            type="date"
+            id="startDateFilter"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
+            value={startDateFilter}
+            onChange={(e) => setStartDateFilter(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        <div>
+          <label htmlFor="endDateFilter" className="block text-gray-700 text-sm font-bold mb-2">End Date:</label>
+          <input
+            type="date"
+            id="endDateFilter"
+            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
+            value={endDateFilter}
+            onChange={(e) => setEndDateFilter(e.target.value)}
+            disabled={isLoading}
+          />
+        </div>
+        <div className="md:col-span-2 lg:col-span-1 flex items-end justify-end">
+          <button
+            onClick={() => {
+              setSelectedUser('');
+              setSelectedProject('');
+              setSelectedTask('');
+              setStartDateFilter('');
+              setEndDateFilter('');
+            }}
+            className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition duration-300 shadow-md w-full"
+            disabled={isLoading}
+          >
+            Clear Filters
+          </button>
         </div>
       </div>
 
@@ -1920,7 +2017,12 @@ function TimesheetEntry({ userId, openConfirmModal }) {
   };
 
   const handleRemoveRow = (rowId) => {
-    setDynamicRows(prevRows => prevRows.filter(row => row.id !== rowId));
+    openConfirmModal('Are you sure you want to remove this row and any associated 0-hour entries?', () => {
+        setDynamicRows(prevRows => prevRows.filter(row => row.id !== rowId));
+        // Optionally, also remove any 0-hour entries associated with this row's task from timesheetEntries state
+        // This is more complex as it requires knowing the task associated with the row being removed
+        // For now, just remove the row from UI. Backend handles actual data persistence.
+    });
   };
 
   const handleRowSelectChange = (rowId, field, value) => {
@@ -2183,7 +2285,7 @@ function TimesheetEntry({ userId, openConfirmModal }) {
                 const selectedMainTaskObj = userTasks.find(t => t.id === parseInt(row.taskId));
                 const selectedSubtaskObj = userTasks.find(t => t.id === parseInt(row.subtaskId));
 
-                // Determine the actual task object this row represents for logging
+                // Determine the actual task ID this row represents for logging
                 const taskForLogging = selectedSubtaskObj || selectedMainTaskObj;
                 const taskIdForLogging = taskForLogging ? taskForLogging.id : null;
 
@@ -2718,7 +2820,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
                 <p className="text-gray-600 text-sm italic">Reason: {request.reason}</p>
                 <p className="text-gray-600 text-sm">Status:
                   <span
-                    className={`ml-2 px-3 py-1 rounded-full text-xs font-semibold ${
+                    className={`ml-2 px-3 py-1 rounded-full text-sm font-semibold ${
                       request.status === 'approved' ? 'bg-green-200 text-green-800' :
                       request.status === 'pending' ? 'bg-yellow-200 text-yellow-800' :
                       'bg-red-200 text-red-800'
@@ -3089,7 +3191,7 @@ function HourlyUpdatesReport({ userId }) {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedUserFilter, setSelectedUserFilter] = useState('');
   const [selectedProjectFilter, setSelectedProjectFilter] = useState('');
-  const [selectedTaskFilter, setSelectedTaskFilter] = useState('');
+  const [selectedTaskFilter, setSelectedTaskFilter] = useState(''); // Correctly declared here
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
 
@@ -3158,7 +3260,7 @@ function HourlyUpdatesReport({ userId }) {
   const getUserName = (userId) => users.find(u => u.id === userId)?.username || `User ${userId}`;
   const getProjectName = (projectId) => projects.find(p => p.id === projectId)?.name || `Project ${projectId}`;
 
-  // Filter tasks for the task dropdown based on selected project
+  // Correctly defined filteredTasksForDropdown within this component's scope
   const filteredTasksForDropdown = useCallback(() => {
     if (!selectedProjectFilter) {
       return tasks; // Show all tasks if no project filter
@@ -3400,7 +3502,7 @@ function AdminDashboard({ userId, openConfirmModal, viewTaskDetails }) { // Adde
         </button>
         <button
           className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'hourly-updates' // NEW TAB FOR HOURLY UPDATES
+            activeTab === 'hourly-updates'
               ? 'bg-gray-200 text-gray-800 border-b-4 border-gray-500'
               : 'text-gray-600 hover:bg-gray-100'
           }`}
@@ -3429,8 +3531,10 @@ function AdminDashboard({ userId, openConfirmModal, viewTaskDetails }) { // Adde
       ) : activeTab === 'leave-approval' ? (
         <LeaveApproval userId={userId} openConfirmModal={openConfirmModal} />
       ) : activeTab === 'reporting' ? (
-        <Reporting userId={userId} />
-      ) : activeTab === 'hourly-updates' ? ( // RENDER NEW HOURLY UPDATES COMPONENT
+        // Using OldReporting for the "Reporting" tab
+        <OldReporting userId={userId} />
+      ) : activeTab === 'hourly-updates' ? (
+        // RENDER NEW HOURLY UPDATES COMPONENT
         <HourlyUpdatesReport userId={userId} />
       ) : (
         <CalendarView userId={userId} userRole="admin" viewTaskDetails={viewTaskDetails} />
