@@ -4,8 +4,8 @@ import 'react-calendar/dist/Calendar.css'; // Default styles for react-calendar
 import moment from 'moment'; // Import moment for date/time handling
 
 // Define your Django API base URL
-// IMPORTANT: This must be your deployed Render backend URL
-const API_BASE_URL = 'https://worklog-cuej.onrender.com/api';
+// IMPORTANT: This must be your deployed Render backend URL or your local Django backend URL
+const API_BASE_URL = 'http://127.0.0.1:8000/api'; // Changed to localhost for testing
 
 
 // Helper function to make authenticated API calls with JWT token
@@ -78,30 +78,50 @@ async function authenticatedFetch(url, options = {}) {
   return response;
 }
 
-// Helper to get dates for a week starting from a given date (Monday is day 0)
-const getWeekDates = (startDate) => {
+// Helper to get dates for a week starting from a given date (Monday is day 0, Sunday is day 6)
+const getWeekDates = (startDate, includeSunday = true) => {
   const dates = [];
   const startOfWeek = new Date(startDate);
-  const dayOfWeek = startOfWeek.getDay();
+  const dayOfWeek = startOfWeek.getDay(); // 0 for Sunday, 1 for Monday, ..., 6 for Saturday
   const diff = startOfWeek.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust to Monday start
   startOfWeek.setDate(diff);
 
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < (includeSunday ? 7 : 6); i++) { // Loop 6 days for Mon-Sat, 7 for Mon-Sun
     const date = new Date(startOfWeek);
     date.setDate(startOfWeek.getDate() + i);
+    // Exclude Sunday if not included
+    if (!includeSunday && date.getDay() === 0) { // If it's Sunday (0) and we don't want it, skip
+      continue;
+    }
     dates.push(date);
   }
   return dates;
 };
 
-// Helper to format date asYYYY-MM-DD
-const formatDate = (date) => date.toISOString().split('T')[0];
+// Helper to format date as YYYY-MM-DD (LOCAL TIME)
+const formatDate = (date) => {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0'); // Months are 0-indexed
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 // Helper to get short day name (e.g., Mon, Tue)
 const getDayName = (date) => {
   const options = { weekday: 'short' };
   return date.toLocaleDateString('en-US', options);
 };
+
+// Helper to convert hours decimal to "X hours Y minutes"
+const formatHoursToMinutes = (decimalHours) => {
+  if (typeof decimalHours !== 'number' || isNaN(decimalHours)) {
+    return '0 hours 0 minutes';
+  }
+  const hours = Math.floor(decimalHours);
+  const minutes = Math.round((decimalHours - hours) * 60);
+  return `${hours} hours ${minutes} minutes`;
+};
+
 
 // --- CORE COMPONENTS (DEFINED FIRST AS THEY ARE CHILDREN) ---
 
@@ -116,13 +136,13 @@ function ConfirmationModal({ isOpen, message, onConfirm, onCancel }) {
         <div className="flex justify-center space-x-4">
           <button
             onClick={onConfirm}
-            className="px-5 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-200"
+            className="px-3 py-1.5 bg-red-300 text-white rounded-lg hover:bg-red-400 transition duration-200 shadow-sm text-sm" // Lighter, smaller, less shadow
           >
             Confirm
           </button>
           <button
             onClick={onCancel}
-            className="px-5 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-200"
+            className="px-3 py-1.5 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition duration-200 shadow-sm text-sm" // Lighter, smaller, less shadow
           >
             Cancel
           </button>
@@ -155,7 +175,7 @@ function Login({ onLogin, onGoToRegister, onGoToAdminLogin }) {
           <input
             type="text"
             id="username"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-transparent transition duration-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-transparent transition duration-200"
             placeholder="Enter your username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -170,7 +190,7 @@ function Login({ onLogin, onGoToRegister, onGoToAdminLogin }) {
           <input
             type="password"
             id="password"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-transparent transition duration-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-transparent transition duration-200"
             placeholder="********"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -181,7 +201,7 @@ function Login({ onLogin, onGoToRegister, onGoToAdminLogin }) {
         <div className="flex flex-col items-center justify-between gap-4">
           <button
             type="submit"
-            className="w-full bg-gradient-to-r from-blue-400 to-purple-500 hover:from-blue-500 hover:to-purple-600 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline shadow-md transform hover:scale-105 transition duration-300 ease-in-out"
+            className="w-full bg-gradient-to-r from-blue-200 to-purple-300 hover:from-blue-300 hover:to-purple-400 text-gray-800 font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline shadow-sm transform hover:scale-105 transition duration-300 ease-in-out text-sm" // Lighter, smaller, smaller shadow, smaller font
             disabled={isLoading}
           >
             {isLoading ? 'Signing In...' : 'Sign In'}
@@ -189,7 +209,7 @@ function Login({ onLogin, onGoToRegister, onGoToAdminLogin }) {
           <button
             type="button"
             onClick={onGoToRegister}
-            className="w-full text-blue-600 hover:text-blue-800 text-sm font-semibold transition duration-300 ease-in-out"
+            className="w-full text-blue-400 hover:text-blue-600 text-xs font-semibold transition duration-300 ease-in-out" // Smaller font, slightly lighter hover
             disabled={isLoading}
           >
             Don't have an account? Register here.
@@ -197,7 +217,7 @@ function Login({ onLogin, onGoToRegister, onGoToAdminLogin }) {
           <button
             type="button"
             onClick={onGoToAdminLogin}
-            className="w-full text-purple-600 hover:text-purple-800 text-sm font-semibold mt-2 transition duration-300 ease-in-out"
+            className="w-full text-purple-400 hover:text-purple-600 text-xs font-semibold mt-2 transition duration-300 ease-in-out" // Smaller font, slightly lighter hover
             disabled={isLoading}
           >
             Are you an Admin? Login here.
@@ -232,7 +252,7 @@ function AdminLogin({ onLogin, onGoToRegularLogin }) {
           <input
             type="text"
             id="adminUsername"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-transparent transition duration-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-transparent transition duration-200" // Smaller padding, lighter ring
             placeholder="Enter admin username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -247,7 +267,7 @@ function AdminLogin({ onLogin, onGoToRegularLogin }) {
           <input
             type="password"
             id="adminPassword"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-transparent transition duration-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-transparent transition duration-200" // Smaller padding, lighter ring
             placeholder="********"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -258,7 +278,7 @@ function AdminLogin({ onLogin, onGoToRegularLogin }) {
         <div className="flex flex-col items-center justify-between gap-4">
           <button
             type="submit"
-            className="w-full bg-gradient-to-r from-purple-400 to-indigo-500 hover:from-purple-500 hover:to-indigo-600 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline shadow-md transform hover:scale-105 transition duration-300 ease-in-out"
+            className="w-full bg-gradient-to-r from-purple-200 to-indigo-300 hover:from-purple-300 hover:to-indigo-400 text-gray-800 font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline shadow-sm transform hover:scale-105 transition duration-300 ease-in-out text-sm" // Lighter, smaller, smaller shadow, smaller font
             disabled={isLoading}
           >
             {isLoading ? 'Signing In...' : 'Sign In as Admin'}
@@ -266,7 +286,7 @@ function AdminLogin({ onLogin, onGoToRegularLogin }) {
           <button
             type="button"
             onClick={onGoToRegularLogin}
-            className="w-full text-blue-600 hover:text-blue-800 text-sm font-semibold mt-2 transition duration-300 ease-in-out"
+            className="w-full text-blue-400 hover:text-blue-600 text-xs font-semibold mt-2 transition duration-300 ease-in-out" // Smaller font, slightly lighter hover
             disabled={isLoading}
           >
             Not an Admin? Go back to User Login.
@@ -353,7 +373,7 @@ function Register({ onRegisterSuccess, onGoToLogin }) {
           <input
             type="text"
             id="regUsername"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-300"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200" // Smaller padding, lighter ring
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
@@ -367,7 +387,7 @@ function Register({ onRegisterSuccess, onGoToLogin }) {
           <input
             type="email"
             id="regEmail"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-300"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200" // Smaller padding, lighter ring
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -381,7 +401,7 @@ function Register({ onRegisterSuccess, onGoToLogin }) {
           <input
             type="password"
             id="regPassword"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-300"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200" // Smaller padding, lighter ring
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -395,7 +415,7 @@ function Register({ onRegisterSuccess, onGoToLogin }) {
           <input
             type="password"
             id="confirmPassword"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-300"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200" // Smaller padding, lighter ring
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
@@ -420,7 +440,7 @@ function Register({ onRegisterSuccess, onGoToLogin }) {
         <div className="flex flex-col items-center justify-between gap-4">
           <button
             type="submit"
-            className="w-full bg-gradient-to-r from-green-400 to-teal-500 hover:from-green-500 hover:to-teal-600 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline shadow-md transform hover:scale-105 transition duration-300 ease-in-out"
+            className="w-full bg-gradient-to-r from-green-200 to-teal-300 hover:from-green-300 hover:to-teal-400 text-gray-800 font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline shadow-sm transform hover:scale-105 transition duration-300 ease-in-out text-sm" // Lighter, smaller, smaller shadow, smaller font
             disabled={isLoading}
           >
             {isLoading ? 'Registering...' : 'Register'}
@@ -428,7 +448,7 @@ function Register({ onRegisterSuccess, onGoToLogin }) {
           <button
             type="button"
             onClick={onGoToLogin}
-            className="w-full text-blue-600 hover:text-blue-800 text-sm font-semibold transition duration-300 ease-in-out"
+            className="w-full text-blue-400 hover:text-blue-600 text-xs font-semibold transition duration-300 ease-in-out" // Smaller font, slightly lighter hover
             disabled={isLoading}
           >
             Already have an account? Login here.
@@ -439,41 +459,89 @@ function Register({ onRegisterSuccess, onGoToLogin }) {
   );
 }
 
-// Project Management Component (Admin)
-function ProjectManagement({ userId, openConfirmModal }) {
+// Project and Task Management Component (Admin) - COMBINED
+function ProjectAndTaskManagement({ userId, openConfirmModal }) {
   const [projects, setProjects] = useState([]);
+  const [users, setUsers] = useState([]); // All users
+  const [nonAdminUsers, setNonAdminUsers] = useState([]); // Only non-admin users for assignment
+  const [adminUsers, setAdminUsers] = useState([]); // Only admin users for reporting manager
+  const [tasks, setTasks] = useState([]); // All tasks
+
   const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectDescription, setNewProjectDescription] = useState('');
-  const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  // REMOVED: newProjectDescription state
   const [editingProject, setEditingProject] = useState(null);
 
-  const fetchProjects = useCallback(async () => {
+  const [selectedProjectForTask, setSelectedProjectForTask] = useState('');
+  const [newTaskName, setNewTaskName] = useState('');
+  const [newTaskDescription, setNewTaskDescription] = useState('');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [assignedToUser, setAssignedToUser] = useState('');
+  const [reportingManager, setReportingManager] = useState('');
+  const [editingTask, setEditingTask] = useState(null);
+
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  // NEW STATE for collapsible sections
+  const [showExistingProjects, setShowExistingProjects] = useState(true);
+  const [showExistingTasks, setShowExistingTasks] = useState(true);
+
+
+  const fetchAllData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/projects/`, {
-        method: 'GET',
-      });
-      if (response.ok) {
-        const data = await response.json();
+      const [projectsResponse, usersResponse, tasksResponse] = await Promise.all([
+        authenticatedFetch(`${API_BASE_URL}/projects/`, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/users/`, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/tasks/`, { method: 'GET' }),
+      ]);
+
+      if (projectsResponse.ok) {
+        const data = await projectsResponse.json();
         setProjects(data);
+        if (data.length > 0 && !selectedProjectForTask) setSelectedProjectForTask(data[0].id);
       } else {
-        const errorData = await response.json();
+        const errorData = await projectsResponse.json();
         setMessage(`Failed to fetch projects: ${errorData.detail || 'Unknown error'}`);
       }
+
+      if (usersResponse.ok) {
+        const data = await usersResponse.json();
+        setUsers(data);
+        const regularUsers = data.filter(user => !user.is_staff);
+        setNonAdminUsers(regularUsers);
+        const staffUsers = data.filter(user => user.is_staff);
+        setAdminUsers(staffUsers);
+        if (regularUsers.length > 0 && !assignedToUser) setAssignedToUser(regularUsers[0].id);
+        if (staffUsers.length > 0 && !reportingManager) setReportingManager(staffUsers[0].id);
+      } else {
+        const errorData = await usersResponse.json();
+        setMessage(`Failed to fetch users: ${errorData.detail || 'Unknown error'}`);
+      }
+
+      if (tasksResponse.ok) {
+        setTasks(await tasksResponse.json());
+      } else {
+        const errorData = await tasksResponse.json();
+        setMessage(`Failed to fetch tasks: ${errorData.detail || 'Unknown error'}`);
+      }
+
     } catch (error) {
-      console.error('Error fetching projects:', error);
-      setMessage('Network error while fetching projects.');
+      console.error('Error fetching initial data:', error);
+      setMessage('Network error while fetching initial data.');
     } finally {
       setIsLoading(false);
       setTimeout(() => setMessage(''), 5000);
     }
-  }, []);
+  }, [authenticatedFetch, selectedProjectForTask, assignedToUser, reportingManager]);
 
   useEffect(() => {
-    fetchProjects();
-  }, [fetchProjects]);
+    if (userId) {
+        fetchAllData();
+    }
+  }, [userId, fetchAllData]);
 
+  // Project Handlers
   const handleAddProject = async (e) => {
     e.preventDefault();
     if (!newProjectName.trim()) {
@@ -481,19 +549,18 @@ function ProjectManagement({ userId, openConfirmModal }) {
       setTimeout(() => setMessage(''), 3000);
       return;
     }
-
     setIsLoading(true);
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/projects/`, {
         method: 'POST',
-        body: JSON.stringify({ name: newProjectName, description: newProjectDescription }),
+        // REMOVED: description from payload
+        body: JSON.stringify({ name: newProjectName }),
       });
-
       if (response.ok) {
         setMessage('Project added successfully!');
         setNewProjectName('');
-        setNewProjectDescription('');
-        fetchProjects();
+        // REMOVED: setNewProjectDescription('');
+        fetchAllData();
       } else {
         const errorData = await response.json();
         setMessage(`Failed to add project: ${errorData.name || errorData.detail || 'Unknown error'}`);
@@ -510,7 +577,7 @@ function ProjectManagement({ userId, openConfirmModal }) {
   const handleEditProject = (project) => {
     setEditingProject(project);
     setNewProjectName(project.name);
-    setNewProjectDescription(project.description);
+    // REMOVED: setNewProjectDescription(project.description);
   };
 
   const handleUpdateProject = async (e) => {
@@ -520,20 +587,19 @@ function ProjectManagement({ userId, openConfirmModal }) {
       setTimeout(() => setMessage(''), 3000);
       return;
     }
-
     setIsLoading(true);
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/projects/${editingProject.id}/`, {
         method: 'PUT',
-        body: JSON.stringify({ name: newProjectName, description: newProjectDescription }),
+        // REMOVED: description from payload
+        body: JSON.stringify({ name: newProjectName }),
       });
-
       if (response.ok) {
         setMessage('Project updated successfully!');
         setEditingProject(null);
         setNewProjectName('');
-        setNewProjectDescription('');
-        fetchProjects();
+        // REMOVED: setNewProjectDescription('');
+        fetchAllData();
       } else {
         const errorData = await response.json();
         setMessage(`Failed to update project: ${errorData.name || errorData.detail || 'Unknown error'}`);
@@ -548,16 +614,15 @@ function ProjectManagement({ userId, openConfirmModal }) {
   };
 
   const handleDeleteProject = (projectId) => {
-    openConfirmModal('Are you sure you want to delete this project? This action cannot be undone.', async () => {
+    openConfirmModal('Are you sure you want to delete this project? This action cannot be undone. All associated tasks will also be deleted.', async () => {
       setIsLoading(true);
       try {
         const response = await authenticatedFetch(`${API_BASE_URL}/projects/${projectId}/`, {
           method: 'DELETE',
         });
-
         if (response.ok) {
           setMessage('Project deleted successfully!');
-          fetchProjects();
+          fetchAllData();
         } else {
           const errorData = await response.json();
           setMessage(`Failed to delete project: ${errorData.detail || 'Unknown error'}`);
@@ -572,201 +637,34 @@ function ProjectManagement({ userId, openConfirmModal }) {
     });
   };
 
-  return (
-    <div className="p-4 bg-white rounded-lg shadow-inner">
-      <h3 className="text-2xl font-medium text-gray-700 mb-4">Manage Projects</h3>
-      {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-blue-100 border border-blue-400 text-blue-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
-          <span className="block sm:inline">{message}</span>
-        </div>
-      )}
-      <form onSubmit={editingProject ? handleUpdateProject : handleAddProject} className="mb-6 bg-blue-50 p-6 rounded-lg shadow-sm border border-blue-100">
-        <h4 className="text-xl font-medium text-gray-700 mb-4">{editingProject ? 'Edit Project' : 'Add New Project'}</h4>
-        <div className="mb-4">
-          <label htmlFor="projectName" className="block text-gray-700 text-sm font-bold mb-2">
-            Project Name
-          </label>
-          <input
-            type="text"
-            id="projectName"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
-            value={newProjectName}
-            onChange={(e) => setNewProjectName(e.target.value)}
-            placeholder="e.g., Q3 Marketing Campaign"
-            required
-            disabled={isLoading}
-          />
-        </div>
-        <div className="mb-4">
-          <label htmlFor="projectDescription" className="block text-gray-700 text-sm font-bold mb-2">
-            Description
-          </label>
-          <textarea
-            id="projectDescription"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
-            value={newProjectDescription}
-            onChange={(e) => setNewProjectDescription(e.target.value)}
-            placeholder="Brief description of the project"
-            rows="3"
-            disabled={isLoading}
-          ></textarea>
-        </div>
-        <div className="flex space-x-4">
-          <button
-            type="submit"
-            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
-            disabled={isLoading}
-          >
-            {isLoading ? (editingProject ? 'Updating...' : 'Adding...') : (editingProject ? 'Update Project' : 'Add Project')}
-          </button>
-          {editingProject && (
-            <button
-              type="button"
-              onClick={() => { setEditingProject(null); setNewProjectName(''); setNewProjectDescription(''); }}
-              className="bg-gray-400 hover:bg-gray-500 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
-              disabled={isLoading}
-            >
-              Cancel Edit
-            </button>
-          )}
-        </div>
-      </form>
-
-      <h4 className="text-xl font-medium text-gray-700 mb-3">Existing Projects</h4>
-      {isLoading && projects.length === 0 ? (
-        <p className="text-gray-500">Loading projects...</p>
-      ) : projects.length === 0 ? (
-        <p className="text-gray-500">No projects added yet. Add one above!</p>
-      ) : (
-        <ul className="space-y-4">
-          {projects.map((project) => (
-            <li key={project.id} className="bg-blue-50 p-4 rounded-lg shadow-sm border border-blue-100 flex flex-col sm:flex-row justify-between items-start sm:items-center">
-              <div className="mb-2 sm:mb-0">
-                <p className="font-semibold text-lg text-blue-800">{project.name}</p>
-                <p className="text-gray-600 text-sm">{project.description}</p>
-              </div>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => handleEditProject(project)}
-                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition duration-300 text-sm"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDeleteProject(project.id)}
-                  className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 text-sm"
-                >
-                  Delete
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-// Task Assignment Component (Admin)
-function TaskAssignment({ userId, openConfirmModal }) {
-  const [projects, setProjects] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [tasks, setTasks] = useState([]); // All tasks, including subtasks
-  const [parentTasks, setParentTasks] = useState([]); // Tasks that can be parents (no parent themselves)
-
-  const [selectedProject, setSelectedProject] = useState('');
-  const [selectedParentTask, setSelectedParentTask] = useState(''); // New state for parent task
-  const [newTaskName, setNewTaskName] = useState('');
-  const [newTaskDescription, setNewTaskDescription] = useState('');
-  const [newTaskDueDate, setNewTaskDueDate] = useState('');
-  const [assignedToUser, setAssignedToUser] = useState('');
-  const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [editingTask, setEditingTask] = useState(null);
-
-  const fetchInitialData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [projectsResponse, usersResponse, tasksResponse] = await Promise.all([
-        authenticatedFetch(`${API_BASE_URL}/projects/`, { method: 'GET' }),
-        authenticatedFetch(`${API_BASE_URL}/users/`, { method: 'GET' }),
-        authenticatedFetch(`${API_BASE_URL}/tasks/`, { method: 'GET' }), // Fetch all tasks
-      ]);
-
-      if (projectsResponse.ok) {
-        const data = await projectsResponse.json();
-        setProjects(data);
-        if (data.length > 0) setSelectedProject(data[0].id);
-      } else {
-        const errorData = await projectsResponse.json();
-        setMessage(`Failed to fetch projects: ${errorData.detail || 'Unknown error'}`);
-      }
-
-      if (usersResponse.ok) {
-        const data = await usersResponse.json();
-        const regularUsers = data.filter(user => !user.is_staff);
-        setUsers(regularUsers);
-        if (regularUsers.length > 0) setAssignedToUser(regularUsers[0].id);
-      } else {
-        const errorData = await usersResponse.json();
-        setMessage(`Failed to fetch users: ${errorData.detail || 'Unknown error'}`);
-      }
-
-      if (tasksResponse.ok) {
-        const data = await tasksResponse.json();
-        setTasks(data);
-        // Filter for top-level tasks (tasks with no parent_task)
-        setParentTasks(data.filter(task => task.parent_task === null));
-      } else {
-        const errorData = await tasksResponse.json();
-        setMessage(`Failed to fetch tasks: ${errorData.detail || 'Unknown error'}`);
-      }
-
-    } catch (error) {
-      console.error('Error fetching initial data:', error);
-      setMessage('Network error while fetching initial data.');
-    } finally {
-      setIsLoading(false);
-      setTimeout(() => setMessage(''), 5000);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchInitialData();
-  }, [fetchInitialData]);
-
-  // Filter parent tasks based on selected project
-  const filteredParentTasks = parentTasks.filter(task => task.project === parseInt(selectedProject));
-
+  // Task Handlers
   const handleAssignTask = async (e) => {
     e.preventDefault();
-    if (!newTaskName.trim() || !selectedProject || !assignedToUser) {
-      setMessage('Please fill all required fields.');
+    if (!newTaskName.trim() || !selectedProjectForTask || !assignedToUser) {
+      setMessage('Please fill all required task fields.');
       setTimeout(() => setMessage(''), 3000);
       return;
     }
-
     setIsLoading(true);
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/tasks/`, {
         method: 'POST',
         body: JSON.stringify({
-          project: selectedProject,
+          project: selectedProjectForTask,
           name: newTaskName,
           description: newTaskDescription,
           assigned_to: assignedToUser,
           due_date: newTaskDueDate || null,
-          parent_task: selectedParentTask || null, // Include parent_task
+          parent_task: null, // Always null as parent task is removed
+          reporting_manager: reportingManager || null,
         }),
       });
-
       if (response.ok) {
         setMessage('Task assigned successfully!');
         setNewTaskName('');
         setNewTaskDescription('');
         setNewTaskDueDate('');
-        setSelectedParentTask(''); // Clear parent task selection
-        fetchInitialData(); // Re-fetch all data to update lists
+        fetchAllData();
       } else {
         const errorData = await response.json();
         setMessage(`Failed to assign task: ${errorData.name || errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
@@ -782,47 +680,47 @@ function TaskAssignment({ userId, openConfirmModal }) {
 
   const handleEditTask = (task) => {
     setEditingTask(task);
-    setSelectedProject(task.project);
+    setSelectedProjectForTask(task.project);
     setNewTaskName(task.name);
     setNewTaskDescription(task.description);
     setNewTaskDueDate(task.due_date || '');
     setAssignedToUser(task.assigned_to || '');
-    setSelectedParentTask(task.parent_task || ''); // Set parent task for editing
+    setReportingManager(task.reporting_manager || '');
   };
 
   const handleUpdateTask = async (e) => {
     e.preventDefault();
-    if (!newTaskName.trim() || !selectedProject || !assignedToUser) {
-      setMessage('Please fill all required fields.');
+    if (!newTaskName.trim() || !selectedProjectForTask || !assignedToUser) {
+      setMessage('Please fill all required task fields.');
       setTimeout(() => setMessage(''), 3000);
       return;
     }
-
     setIsLoading(true);
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/tasks/${editingTask.id}/`, {
         method: 'PUT',
         body: JSON.stringify({
-          project: selectedProject,
+          project: selectedProjectForTask,
           name: newTaskName,
           description: newTaskDescription,
           assigned_to: assignedToUser,
           due_date: newTaskDueDate || null,
           status: editingTask.status,
           progress: editingTask.progress,
-          parent_task: selectedParentTask || null, // Include parent_task for update
+          parent_task: null, // Always null as parent task is removed
+          reporting_manager: reportingManager || null,
         }),
       });
-
       if (response.ok) {
         setMessage('Task updated successfully!');
         setEditingTask(null);
         setNewTaskName('');
         setNewTaskDescription('');
         setNewTaskDueDate('');
-        setAssignedToUser(users.length > 0 ? users[0].id : '');
-        setSelectedParentTask(''); // Clear parent task selection
-        fetchInitialData();
+        setSelectedProjectForTask(projects.length > 0 ? projects[0].id : '');
+        setAssignedToUser(nonAdminUsers.length > 0 ? nonAdminUsers[0].id : '');
+        setReportingManager(adminUsers.length > 0 ? adminUsers[0].id : '');
+        fetchAllData();
       } else {
         const errorData = await response.json();
         setMessage(`Failed to update task: ${errorData.name || errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
@@ -837,16 +735,15 @@ function TaskAssignment({ userId, openConfirmModal }) {
   };
 
   const handleDeleteTask = (taskId) => {
-    openConfirmModal('Are you sure you want to delete this task? This action cannot be undone.', async () => {
+    openConfirmModal('Are you sure you want to delete this task? This action cannot be undone. All associated tasks will also be deleted.', async () => {
       setIsLoading(true);
       try {
         const response = await authenticatedFetch(`${API_BASE_URL}/tasks/${taskId}/`, {
           method: 'DELETE',
         });
-
         if (response.ok) {
           setMessage('Task deleted successfully!');
-          fetchInitialData();
+          fetchAllData();
         } else {
           const errorData = await response.json();
           setMessage(`Failed to delete task: ${errorData.detail || 'Unknown error'}`);
@@ -861,201 +758,163 @@ function TaskAssignment({ userId, openConfirmModal }) {
     });
   };
 
-  // Helper to render tasks hierarchically
-  const renderTasks = (tasksToRender, depth = 0) => {
-    return tasksToRender.map(task => (
-      <React.Fragment key={task.id}>
-        <li
-          className={`bg-green-50 p-4 rounded-lg shadow-sm border border-green-100 flex flex-col sm:flex-row justify-between items-start sm:items-center`}
-          style={{ marginLeft: `${depth * 20}px` }} // Indent subtasks
-        >
-          <div className="mb-2 sm:mb-0">
-            <p className="font-semibold text-lg text-green-800">
-              {depth > 0 && '↳ '} {/* Arrow for subtasks */}
-              {task.name} (Project: {task.project_name})
-            </p>
-            {task.parent_task_name && <p className="text-gray-600 text-sm">Parent: {task.parent_task_name}</p>}
-            <p className="text-gray-600 text-sm">Assigned To: {task.assigned_to_username || 'N/A'}</p>
-            <p className="text-gray-600 text-sm">Due Date: {task.due_date || 'N/A'}</p>
-            <p className="text-gray-600 text-sm">Status: <span className={`font-semibold ${task.status === 'completed' ? 'text-green-600' : task.status === 'in_progress' ? 'text-blue-600' : 'text-yellow-600'}`}>{task.status}</span></p>
-            <p className="text-gray-600 text-sm">Progress: {task.progress}%</p>
-          </div>
-          <div className="flex space-x-2">
-            <button
-              onClick={() => handleEditTask(task)}
-              className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition duration-300 text-sm"
-            >
-              Edit
-            </button>
-            <button
-              onClick={() => handleDeleteTask(task.id)}
-              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 text-sm"
-            >
-              Delete
-            </button>
-          </div>
-        </li>
-        {/* Recursively render subtasks if they exist */}
-        {task.subtasks_ids && task.subtasks_ids.length > 0 && (
-          renderTasks(tasks.filter(t => task.subtasks_ids.includes(t.id)), depth + 1)
-        )}
-      </React.Fragment>
-    ));
-  };
-
+  const getProjectName = (projectId) => projects.find(p => p.id === projectId)?.name || 'N/A';
+  const getUserName = (userId) => users.find(u => u.id === userId)?.username || 'N/A';
 
   return (
     <div className="p-4 bg-white rounded-lg shadow-inner">
-      <h3 className="text-2xl font-medium text-gray-700 mb-4">Assign Tasks</h3>
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Manage Projects & Tasks</h3>
       {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-green-100 border border-green-400 text-green-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-blue-100 border border-blue-400 text-blue-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
           <span className="block sm:inline">{message}</span>
         </div>
       )}
-      <form onSubmit={editingTask ? handleUpdateTask : handleAssignTask} className="mb-6 bg-green-50 p-6 rounded-lg shadow-sm border border-green-100">
-        <h4 className="text-xl font-medium text-gray-700 mb-4">{editingTask ? 'Edit Task' : 'Create New Task'}</h4>
-        <div className="mb-4">
-          <label htmlFor="selectProject" className="block text-gray-700 text-sm font-bold mb-2">
-            Select Project
-          </label>
-          <select
-            id="selectProject"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200"
-            value={selectedProject}
-            onChange={(e) => {
-              setSelectedProject(e.target.value);
-              setSelectedParentTask(''); // Clear parent task when project changes
-            }}
-            required
-            disabled={isLoading || projects.length === 0}
-          >
-            {projects.length === 0 ? (
-              <option value="">No projects available</option>
-            ) : (
-              projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))
-            )}
-          </select>
-        </div>
-        <div className="mb-4">
-          <label htmlFor="selectedParentTask" className="block text-gray-700 text-sm font-bold mb-2">
-            Parent Task (Optional, for Sub-tasks)
-          </label>
-          <select
-            id="selectedParentTask"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200"
-            value={selectedParentTask}
-            onChange={(e) => setSelectedParentTask(e.target.value)}
-            disabled={isLoading || filteredParentTasks.length === 0}
-          >
-            <option value="">No Parent Task (This is a main task)</option>
-            {filteredParentTasks.map((task) => (
-              <option key={task.id} value={task.id}>
-                {task.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="mb-4">
-          <label htmlFor="taskName" className="block text-gray-700 text-sm font-bold mb-2">
-            Task Name
-          </label>
-          <input
-            type="text"
-            id="taskName"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200"
-            value={newTaskName}
-            onChange={(e) => setNewTaskName(e.target.value)}
-            placeholder="e.g., Design Landing Page"
-            required
-            disabled={isLoading}
-          />
-        </div>
-        <div className="mb-4">
-          <label htmlFor="taskDescription" className="block text-gray-700 text-sm font-bold mb-2">
-            Task Description
-          </label>
-          <textarea
-            id="taskDescription"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200"
-            value={newTaskDescription}
-            onChange={(e) => setNewTaskDescription(e.target.value)}
-            placeholder="Detailed description of the task"
-            rows="3"
-            disabled={isLoading}
-          ></textarea>
-        </div>
-        <div className="mb-4">
-          <label htmlFor="taskDueDate" className="block text-gray-700 text-sm font-bold mb-2">
-            Due Date
-          </label>
-          <input
-            type="date"
-            id="taskDueDate"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200"
-            value={newTaskDueDate}
-            onChange={(e) => setNewTaskDueDate(e.target.value)}
-            disabled={isLoading}
-          />
-        </div>
-        <div className="mb-4">
-          <label htmlFor="assignTo" className="block text-gray-700 text-sm font-bold mb-2">
-            Assign To
-          </label>
-          <select
-            id="assignTo"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-200"
-            value={assignedToUser}
-            onChange={(e) => setAssignedToUser(e.target.value)}
-            required
-            disabled={isLoading || users.length === 0}
-          >
-            {users.length === 0 ? (
-              <option value="">No users available</option>
-            ) : (
-              users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.username}
-                </option>
-              ))
-            )}
-          </select>
-        </div>
-        <div className="flex space-x-4">
-          <button
-            type="submit"
-            className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
-            disabled={isLoading || projects.length === 0 || users.length === 0}
-          >
-            {isLoading ? (editingTask ? 'Updating...' : 'Assigning...') : (editingTask ? 'Update Task' : 'Assign Task')}
-          </button>
-          {editingTask && (
-            <button
-              type="button"
-              onClick={() => { setEditingTask(null); setNewTaskName(''); setNewTaskDescription(''); setNewTaskDueDate(''); setAssignedToUser(users.length > 0 ? users[0].id : ''); setSelectedParentTask(''); }}
-              className="bg-gray-400 hover:bg-gray-500 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
-              disabled={isLoading}
-            >
-              Cancel Edit
-            </button>
-          )}
-        </div>
-      </form>
 
-      <h4 className="text-xl font-medium text-gray-700 mb-3">Existing Tasks</h4>
-      {isLoading && tasks.length === 0 ? (
-        <p className="text-gray-500">Loading tasks...</p>
-      ) : tasks.length === 0 ? (
-        <p className="text-gray-500">No tasks assigned yet. Assign one above!</p>
-      ) : (
-        <ul className="space-y-4">
-          {/* Render only top-level tasks initially, and let recursion handle subtasks */}
-          {renderTasks(tasks.filter(task => task.parent_task === null))}
-        </ul>
-      )}
+      {/* Combined Project and Task Management Section */}
+      <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-lg shadow-xl border border-blue-200"> {/* Changed to-green-50 to to-blue-100 */}
+        {/* Project Management Section */}
+        <div className="mb-8 pb-8 border-b border-blue-200"> {/* Added border-b for visual separation */}
+          <h4 className="text-xl font-medium text-gray-700 mb-4">{editingProject ? 'Edit Project' : 'Add New Project'}</h4>
+          <form onSubmit={editingProject ? handleUpdateProject : handleAddProject}>
+            <div className="mb-4">
+              <label htmlFor="projectName" className="block text-gray-700 text-sm font-bold mb-2">Project Name</label>
+              <input type="text" id="projectName" className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200" value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="e.g., Q3 Marketing Campaign" required disabled={isLoading} />
+            </div>
+            {/* REMOVED Project Description field */}
+            <div className="flex space-x-4">
+              <button type="submit" className="bg-blue-200 hover:bg-blue-300 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out transform hover:scale-105 text-sm" disabled={isLoading}> {/* Lighter blue, smaller, less shadow */}
+                {isLoading ? (editingProject ? 'Updating...' : 'Adding...') : (editingProject ? 'Update Project' : 'Add Project')}
+              </button>
+              {editingProject && (
+                <button type="button" onClick={() => { setEditingProject(null); setNewProjectName(''); /* REMOVED: setNewProjectDescription(''); */ }} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out transform hover:scale-105 text-sm" disabled={isLoading}> {/* Lighter, smaller, less shadow */}
+                  Cancel Edit
+                </button>
+              )}
+            </div>
+          </form>
+
+          {/* Existing Projects - Collapsible Section */}
+          <div className="mt-8">
+            <button
+              className="flex items-center justify-between w-full py-2.5 px-4 bg-blue-100 text-blue-800 font-semibold rounded-lg shadow-sm hover:bg-blue-200 transition duration-300 text-base border border-blue-200" // Slightly larger padding, added border
+              onClick={() => setShowExistingProjects(!showExistingProjects)}
+            >
+              <h4 className="text-base">Existing Projects</h4> {/* Maintained size for consistency with button */}
+              <svg className={`w-5 h-5 transform transition-transform ${showExistingProjects ? 'rotate-180' : 'rotate-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+            </button>
+            {showExistingProjects && (
+              <div className="mt-4">
+                {isLoading && projects.length === 0 ? (
+                  <p className="text-gray-500">Loading projects...</p>
+                ) : projects.length === 0 ? (
+                  <p className="text-gray-500">No projects added yet. Add one above!</p>
+                ) : (
+                  <ul className="space-y-3"> {/* Slightly reduced spacing */}
+                    {projects.map((project) => (
+                      <li key={project.id} className="bg-blue-100 p-3 rounded-lg shadow-sm border border-blue-200 flex flex-col sm:flex-row justify-between items-start sm:items-center"> {/* Changed background/border to blue */}
+                        <div className="mb-1 sm:mb-0"> {/* Smaller margin */}
+                          <p className="font-semibold text-sm text-blue-800">{project.name}</p> {/* Made project name smaller (text-sm) */}
+                          {/* REMOVED project.description */}
+                        </div>
+                        <div className="flex space-x-2">
+                          <button onClick={() => handleEditProject(project)} className="px-3 py-1.5 bg-yellow-300 text-gray-800 rounded-lg hover:bg-yellow-400 transition duration-300 text-xs shadow-sm">Edit</button> {/* Lighter, smaller, smaller font, less shadow */}
+                          <button onClick={() => handleDeleteProject(project.id)} className="px-3 py-1.5 bg-red-300 text-white rounded-lg hover:bg-red-400 transition duration-300 text-xs shadow-sm">Delete</button> {/* Lighter, smaller, smaller font, less shadow */}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Task Assignment Section */}
+        <div>
+          <h4 className="text-xl font-medium text-gray-700 mb-4">{editingTask ? 'Edit Task' : 'Assign New Task'}</h4>
+          <form onSubmit={editingTask ? handleUpdateTask : handleAssignTask}>
+            <div className="mb-4">
+              <label htmlFor="selectProjectForTask" className="block text-gray-700 text-sm font-bold mb-2">Select Project</label>
+              <select id="selectProjectForTask" className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200" value={selectedProjectForTask} onChange={(e) => setSelectedProjectForTask(e.target.value)} required disabled={isLoading || projects.length === 0}> {/* Changed ring color to blue */}
+                {projects.length === 0 ? (<option value="">No projects available</option>) : (projects.map((project) => (<option key={project.id} value={project.id}>{project.name}</option>)))}
+              </select>
+            </div>
+            <div className="mb-4">
+              <label htmlFor="taskName" className="block text-gray-700 text-sm font-bold mb-2">Task Name</label>
+              <input type="text" id="taskName" className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200" value={newTaskName} onChange={(e) => setNewTaskName(e.target.value)} placeholder="e.g., Design Landing Page" required disabled={isLoading} /> {/* Changed ring color to blue */}
+            </div>
+            <div className="mb-4">
+              <label htmlFor="taskDescription" className="block text-gray-700 text-sm font-bold mb-2">Task Description</label>
+              <textarea id="taskDescription" className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200" value={newTaskDescription} onChange={(e) => setNewTaskDescription(e.target.value)} placeholder="Detailed description of the task" rows="3" disabled={isLoading}></textarea> {/* Changed ring color to blue */}
+            </div>
+            <div className="mb-4">
+              <label htmlFor="taskDueDate" className="block text-gray-700 text-sm font-bold mb-2">Due Date</label>
+              <input type="date" id="taskDueDate" className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200" value={newTaskDueDate} onChange={(e) => setNewTaskDueDate(e.target.value)} disabled={isLoading} /> {/* Changed ring color to blue */}
+            </div>
+            <div className="mb-4">
+              <label htmlFor="assignTo" className="block text-gray-700 text-sm font-bold mb-2">Assign To</label>
+              <select id="assignTo" className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200" value={assignedToUser} onChange={(e) => setAssignedToUser(e.target.value)} required disabled={isLoading || nonAdminUsers.length === 0}> {/* Changed ring color to blue */}
+                {nonAdminUsers.length === 0 ? (<option value="">No users available</option>) : (nonAdminUsers.map((user) => (<option key={user.id} value={user.id}>{user.username}</option>)))}
+              </select>
+            </div>
+            <div className="mb-4">
+              <label htmlFor="reportingManager" className="block text-gray-700 text-sm font-bold mb-2">Reporting Manager</label> {/* SHORTENED LABEL */}
+              <select id="reportingManager" className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200" value={reportingManager} onChange={(e) => setReportingManager(e.target.value)} disabled={isLoading || adminUsers.length === 0}> {/* Changed ring color to blue */}
+                <option value="">None</option>
+                {adminUsers.map((user) => (<option key={user.id} value={user.id}>{user.username}</option>))}
+              </select>
+              {adminUsers.length === 0 && <p className="text-sm text-gray-500 mt-1">No admin users available to be reporting managers.</p>}
+            </div>
+            <div className="flex space-x-4">
+              <button type="submit" className="bg-blue-200 hover:bg-blue-300 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out transform hover:scale-105 text-sm" disabled={isLoading || projects.length === 0 || nonAdminUsers.length === 0}> {/* Lighter blue, smaller, less shadow */}
+                {isLoading ? (editingTask ? 'Updating...' : 'Assigning...') : (editingTask ? 'Update Task' : 'Assign Task')}
+              </button>
+              {editingTask && (
+                <button type="button" onClick={() => { setEditingTask(null); setNewTaskName(''); setNewTaskDescription(''); setNewTaskDueDate(''); setSelectedProjectForTask(projects.length > 0 ? projects[0].id : ''); setAssignedToUser(nonAdminUsers.length > 0 ? nonAdminUsers[0].id : ''); setReportingManager(adminUsers.length > 0 ? adminUsers[0].id : ''); }} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out transform hover:scale-105 text-sm" disabled={isLoading}> {/* Lighter, smaller, less shadow */}
+                  Cancel Edit
+                </button>
+              )}
+            </div>
+          </form>
+
+          {/* Existing Tasks - Collapsible Section */}
+          <div className="mt-8">
+            <button
+              className="flex items-center justify-between w-full py-2.5 px-4 bg-blue-100 text-blue-800 font-semibold rounded-lg shadow-sm hover:bg-blue-200 transition duration-300 text-base border border-blue-200" // Slightly larger padding, added border
+              onClick={() => setShowExistingTasks(!showExistingTasks)}
+            >
+              <h4 className="text-base">Existing Tasks</h4> {/* Maintained size for consistency with button */}
+              <svg className={`w-5 h-5 transform transition-transform ${showExistingTasks ? 'rotate-180' : 'rotate-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+            </button>
+            {showExistingTasks && (
+              <div className="mt-4">
+                {isLoading && tasks.length === 0 ? (
+                  <p className="text-gray-500">Loading tasks...</p>
+                ) : tasks.length === 0 ? (
+                  <p className="text-gray-500">No tasks assigned yet. Assign one above!</p>
+                ) : (
+                  <ul className="space-y-3"> {/* Slightly reduced spacing */}
+                    {tasks.map((task) => (
+                      <li key={task.id} className="bg-blue-100 p-3 rounded-lg shadow-sm border border-blue-200 flex flex-col sm:flex-row justify-between items-start sm:items-center"> {/* Changed background/border to blue */}
+                        <div className="mb-1 sm:mb-0"> {/* Smaller margin */}
+                          <p className="font-semibold text-sm text-blue-800">{task.name} (Project: {getProjectName(task.project)})</p> {/* Made task name smaller (text-sm), changed text color to blue */}
+                          <p className="text-gray-600 text-xs">Assigned To: {getUserName(task.assigned_to)}</p> {/* Smaller font */}
+                          <p className="text-gray-600 text-xs">Due Date: {task.due_date || 'N/A'}</p> {/* Smaller font */}
+                          <p className="text-gray-600 text-xs">Reporting Manager: {getUserName(task.reporting_manager)}</p> {/* Smaller font */}
+                        </div>
+                        <div className="flex space-x-2">
+                          <button onClick={() => handleEditTask(task)} className="px-3 py-1.5 bg-yellow-300 text-gray-800 rounded-lg hover:bg-yellow-400 transition duration-300 text-xs shadow-sm">Edit</button> {/* Lighter, smaller, smaller font, less shadow */}
+                          <button onClick={() => handleDeleteTask(task.id)} className="px-3 py-1.5 bg-red-300 text-white rounded-lg hover:bg-red-400 transition duration-300 text-xs shadow-sm">Delete</button> {/* Lighter, smaller, smaller font, less shadow */}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1067,7 +926,7 @@ function UserManagement({ userId, openConfirmModal }) {
   const [isLoading, setIsLoading] = useState(false);
 
   const [newUsername, setNewUsername] = useState('');
-  const [newEmail, setNewEmail] = useState('');
+  const [newEmail, setNewEmail] = useState(''); // Corrected: Declared newEmail
   const [newPassword, setNewPassword] = useState('');
   const [newConfirmPassword, setNewConfirmPassword] = useState('');
   const [isNewUserStaff, setIsNewUserStaff] = useState(false);
@@ -1092,11 +951,13 @@ function UserManagement({ userId, openConfirmModal }) {
       setIsLoading(false);
       setTimeout(() => setMessage(''), 5000);
     }
-  }, []);
+  }, [authenticatedFetch]); // Added authenticatedFetch to dependencies
 
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    if (userId) { // Only fetch if userId is available
+        fetchUsers();
+    }
+  }, [userId, fetchUsers]);
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
@@ -1118,7 +979,7 @@ function UserManagement({ userId, openConfirmModal }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: newUsername,
-          email: newEmail,
+          email: newEmail, // Corrected: Use newEmail here
           password: newPassword,
           is_staff: isNewUserStaff
         }),
@@ -1189,7 +1050,7 @@ function UserManagement({ userId, openConfirmModal }) {
     <div className="p-4 bg-white rounded-lg shadow-inner">
       <h3 className="text-2xl font-medium text-gray-700 mb-4">Manage Users</h3>
       {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-purple-100 border border-purple-400 text-purple-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-purple-100 border border-purple-400 text-purple-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
           <span className="block sm:inline">{message}</span>
         </div>
       )}
@@ -1203,7 +1064,7 @@ function UserManagement({ userId, openConfirmModal }) {
           <input
             type="text"
             id="newUsername"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200" // Smaller padding, lighter ring
             value={newUsername}
             onChange={(e) => setNewUsername(e.target.value)}
             required
@@ -1217,9 +1078,9 @@ function UserManagement({ userId, openConfirmModal }) {
           <input
             type="email"
             id="newEmail"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200"
-            value={newEmail}
-            onChange={(e) => setNewEmail(e.target.value)}
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200" // Smaller padding, lighter ring
+            value={newEmail} // Corrected: Use newEmail
+            onChange={(e) => setNewEmail(e.target.value)} // Corrected: Use setNewEmail
             required
             disabled={isLoading}
           />
@@ -1231,7 +1092,7 @@ function UserManagement({ userId, openConfirmModal }) {
           <input
             type="password"
             id="newPassword"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200" // Smaller padding, lighter ring
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
@@ -1245,7 +1106,7 @@ function UserManagement({ userId, openConfirmModal }) {
           <input
             type="password"
             id="newConfirmPassword"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200" // Smaller padding, lighter ring
             value={newConfirmPassword}
             onChange={(e) => setNewConfirmPassword(e.target.value)}
             required
@@ -1267,7 +1128,7 @@ function UserManagement({ userId, openConfirmModal }) {
         </div>
         <button
           type="submit"
-          className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
+          className="bg-purple-300 hover:bg-purple-400 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out transform hover:scale-105 text-sm" // Lighter, smaller, less shadow
           disabled={isLoading}
         >
           {isLoading ? 'Creating...' : 'Create User'}
@@ -1280,20 +1141,20 @@ function UserManagement({ userId, openConfirmModal }) {
       ) : users.length === 0 ? (
         <p className="text-gray-500">No users found. Create one above!</p>
       ) : (
-        <ul className="space-y-4">
+        <ul className="space-y-3"> {/* Slightly reduced spacing */}
           {users.map((user) => (
-            <li key={user.id} className="bg-purple-50 p-4 rounded-lg shadow-sm border border-purple-100 flex justify-between items-center">
+            <li key={user.id} className="bg-purple-50 p-3 rounded-lg shadow-sm border border-purple-100 flex justify-between items-center"> {/* Smaller padding */}
               <div>
-                <p className="font-semibold text-lg text-purple-800">{user.username} {user.is_staff && <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-200 text-purple-800">Admin</span>}</p>
-                <p className="text-gray-600 text-sm">{user.email}</p>
+                <p className="font-semibold text-base text-purple-800">{user.username} {user.is_staff && <span className="ml-2 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-purple-200 text-purple-800">Admin</span>}</p> {/* Smaller font for username, smaller padding for admin tag */}
+                <p className="text-gray-600 text-xs">{user.email}</p> {/* Smaller font */}
               </div>
               {/* Added Delete Button for Users */}
               <button
                 onClick={() => handleDeleteUser(user.id, user.username)}
-                className={`px-4 py-2 text-white rounded-lg transition duration-300 text-sm ${
+                className={`px-3 py-1.5 text-white rounded-lg transition duration-300 text-xs shadow-sm ${ // Lighter, smaller, smaller font, less shadow
                   user.id === userId // Disable if it's the currently logged-in user
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-red-500 hover:bg-red-600'
+                    ? 'bg-gray-300 cursor-not-allowed'
+                    : 'bg-red-300 hover:bg-red-400'
                 }`}
                 disabled={isLoading || user.id === userId} // Disable while loading or if it's self
               >
@@ -1308,12 +1169,13 @@ function UserManagement({ userId, openConfirmModal }) {
 }
 
 // Leave Approval Component (Admin)
-function LeaveApproval({ userId, openConfirmModal }) {
+function LeaveApproval({ userId, openConfirmModal, onLeaveStatusChange }) { // Added onLeaveStatusChange prop
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchLeaveRequests = useCallback(async () => {
+    console.log('[LeaveApproval] fetchLeaveRequests: Starting fetch...');
     setIsLoading(true);
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/leave-requests/`, {
@@ -1321,10 +1183,14 @@ function LeaveApproval({ userId, openConfirmModal }) {
       });
       if (response.ok) {
         const data = await response.json();
+        console.log('[LeaveApproval] fetchLeaveRequests: Raw data fetched successfully.', data);
+        // Display ALL leave requests, not just pending ones for admin view
         setLeaveRequests(data);
       } else {
-        const errorData = await response.json();
-        setMessage(`Failed to fetch leave requests: ${errorData.detail || 'Unknown error'}`);
+        // If response is not OK, log the raw text for debugging
+        const errorText = await response.text();
+        console.error('Failed to fetch leave requests. Response status:', response.status, 'Response text:', errorText);
+        setMessage(`Failed to fetch leave requests: ${response.status} - ${errorText || 'Unknown error'}.`);
       }
     } catch (error) {
       console.error('Error fetching leave requests:', error);
@@ -1333,14 +1199,18 @@ function LeaveApproval({ userId, openConfirmModal }) {
       setIsLoading(false);
       setTimeout(() => setMessage(''), 5000);
     }
-  }, []);
+  }, [authenticatedFetch]); // Added authenticatedFetch to dependencies
 
   useEffect(() => {
-    fetchLeaveRequests();
-  }, [fetchLeaveRequests]);
+    if (userId) { // Only fetch if userId is available
+        fetchLeaveRequests();
+    }
+  }, [userId, fetchLeaveRequests]);
 
   const handleUpdateLeaveRequest = async (requestId, newStatus, adminComments = '') => {
+    console.log(`[LeaveApproval] handleUpdateLeaveRequest: Attempting to update request ${requestId} to status: ${newStatus}`);
     setIsLoading(true);
+    setMessage(''); // Clear previous messages
     try {
       const response = await authenticatedFetch(`${API_BASE_URL}/leave-requests/${requestId}/`, {
         method: 'PATCH',
@@ -1348,15 +1218,25 @@ function LeaveApproval({ userId, openConfirmModal }) {
       });
 
       if (response.ok) {
+        console.log(`[LeaveApproval] handleUpdateLeaveRequest: Request ${requestId} updated successfully to ${newStatus}.`);
         setMessage(`Leave request ${newStatus} successfully!`);
+        // Re-fetch the full list to ensure consistency and get any new pending requests
         fetchLeaveRequests();
+        // Notify parent (App component) to trigger user's re-fetch
+        onLeaveStatusChange();
+        console.log('[LeaveApproval] onLeaveStatusChange() called.');
       } else {
         const errorData = await response.json();
-        setMessage(`Failed to update leave request: ${errorData.detail || 'Unknown error'}`);
+        console.error(`[LeaveApproval] handleUpdateLeaveRequest: Failed to update request ${requestId}.`, response.status, errorData);
+        setMessage(`Failed to update leave request: ${errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
+        // If update fails, re-fetch to revert optimistic update
+        fetchLeaveRequests();
       }
     } catch (error) {
-      console.error('Error updating leave request:', error);
+      console.error('[LeaveApproval] handleUpdateLeaveRequest: Network error.', error);
       setMessage('Network error while updating leave request.');
+      // If network error, re-fetch to revert optimistic update
+      fetchLeaveRequests();
     } finally {
       setIsLoading(false);
       setTimeout(() => setMessage(''), 5000);
@@ -1366,21 +1246,32 @@ function LeaveApproval({ userId, openConfirmModal }) {
   const handleDeleteLeaveRequest = (requestId) => {
     openConfirmModal('Are you sure you want to delete this leave request? This action cannot be undone.', async () => {
       setIsLoading(true);
+      setMessage(''); // Clear previous messages
       try {
         const response = await authenticatedFetch(`${API_BASE_URL}/leave-requests/${requestId}/`, {
           method: 'DELETE',
         });
 
         if (response.ok) {
+          console.log(`[LeaveApproval] handleDeleteLeaveRequest: Request ${requestId} deleted successfully.`);
           setMessage('Leave request deleted successfully!');
-          fetchLeaveRequests();
+          // Optimistically remove the deleted request from the displayed list
+          setLeaveRequests(prevRequests =>
+              prevRequests.filter(req => req.id !== requestId)
+          );
+          fetchLeaveRequests(); // Re-fetch for admin's view to update UI
+          onLeaveStatusChange(); // Notify parent (App component)
+          console.log('[LeaveApproval] onLeaveStatusChange() called.');
         } else {
           const errorData = await response.json();
+          console.error(`[LeaveApproval] handleDeleteLeaveRequest: Failed to delete request ${requestId}.`, response.status, errorData);
           setMessage(`Failed to delete leave request: ${errorData.detail || 'Unknown error'}`);
+          fetchLeaveRequests(); // Re-fetch if delete fails
         }
       } catch (error) {
-        console.error('Error deleting leave request:', error);
+        console.error('[LeaveApproval] handleDeleteLeaveRequest: Network error.', error);
         setMessage('Network error while deleting leave request.');
+        fetchLeaveRequests(); // Re-fetch if network error
       } finally {
         setIsLoading(false);
         setTimeout(() => setMessage(''), 5000);
@@ -1392,51 +1283,55 @@ function LeaveApproval({ userId, openConfirmModal }) {
     <div className="p-4 bg-white rounded-lg shadow-inner">
       <h3 className="text-2xl font-medium text-gray-700 mb-4">Approve/Reject Leave Requests</h3>
       {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-red-100 border border-red-400 text-red-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-green-100 border border-green-400 text-green-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
           <span className="block sm:inline">{message}</span>
         </div>
       )}
+      <p className="text-gray-600 mb-4 text-sm"> {/* Keep this text, it's informative */}
+        You are viewing all leave requests (pending, approved, and rejected). Use the buttons to change status or delete requests.
+      </p>
 
       {isLoading && leaveRequests.length === 0 ? (
         <p className="text-gray-500">Loading leave requests...</p>
       ) : leaveRequests.length === 0 ? (
         <p className="text-gray-500">No leave requests to review.</p>
       ) : (
-        <ul className="space-y-4">
+        <ul className="space-y-3"> {/* Slightly reduced spacing */}
           {leaveRequests.map((request) => (
-            <li key={request.id} className="bg-red-50 p-4 rounded-lg shadow-sm border border-red-100 flex flex-col sm:flex-row justify-between items-start sm:items-center">
-              <div className="mb-2 sm:mb-0">
-                <p className="font-semibold text-lg text-red-800">{request.user_username} - {request.leave_type} {request.is_hourly && `(${request.start_time} - ${request.end_time})`}</p>
-                <p className="text-gray-600 text-sm">
+            <li key={request.id} className="bg-red-50 p-3 rounded-lg shadow-sm border border-red-100 flex flex-col sm:flex-row justify-between items-start sm:items-center"> {/* Smaller padding */}
+              <div className="mb-1 sm:mb-0"> {/* Smaller margin */}
+                <p className="font-semibold text-base text-red-800">{request.user_username} - {request.leave_type} {request.is_hourly && `(${request.start_time} - ${request.end_time})`}</p> {/* Smaller font */}
+                <p className="text-gray-600 text-xs"> {/* Smaller font */}
                   {request.start_date} {request.is_hourly ? '' : `to ${request.end_date}`}
                 </p>
-                <p className="text-gray-600 text-sm italic">Reason: {request.reason}</p>
-                <p className="text-gray-600 text-sm">Status: <span className={`font-semibold ${request.status === 'approved' ? 'text-green-600' : request.status === 'pending' ? 'text-yellow-600' : 'text-red-600'}`}>{request.status}</span></p>
-                {request.admin_comments && <p className="text-gray-600 text-sm">Admin Comments: {request.admin_comments}</p>}
-                {request.approved_by_username && <p className="text-gray-600 text-sm">Approved By: {request.approved_by_username}</p>}
+                <p className="text-gray-600 text-xs italic">Reason: {request.reason}</p> {/* Smaller font */}
+                <p className="text-gray-600 text-xs">Status: <span className={`font-semibold ${request.status === 'approved' ? 'text-green-600' : request.status === 'pending' ? 'text-yellow-600' : 'text-red-600'}`}>{request.status}</span></p> {/* Smaller font */}
+                {request.admin_comments && <p className="text-gray-600 text-xs">Admin Comments: {request.admin_comments}</p>} {/* Smaller font */}
+                {request.approved_by_username && <p className="text-gray-600 text-xs">Approved By: {request.approved_by_username}</p>} {/* Smaller font */}
               </div>
               <div className="flex space-x-2 mt-2 sm:mt-0">
-                {request.status === 'pending' && (
+                {request.status === 'pending' && ( // Only show buttons if status is 'pending'
                   <>
                     <button
                       onClick={() => handleUpdateLeaveRequest(request.id, 'approved')}
-                      className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition duration-300 text-sm"
+                      className="px-3 py-1.5 bg-green-300 text-gray-800 rounded-lg hover:bg-green-400 transition duration-300 text-xs shadow-sm" // Lighter, smaller, less shadow
                       disabled={isLoading}
                     >
                       Approve
                     </button>
                     <button
                       onClick={() => handleUpdateLeaveRequest(request.id, 'rejected')}
-                      className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition duration-300 text-sm"
+                      className="px-3 py-1.5 bg-yellow-300 text-gray-800 rounded-lg hover:bg-yellow-400 transition duration-300 text-xs shadow-sm" // Lighter, smaller, less shadow
                       disabled={isLoading}
                     >
                       Reject
                     </button>
                   </>
                 )}
+                {/* Always show delete button, regardless of status */}
                 <button
                   onClick={() => handleDeleteLeaveRequest(request.id)}
-                  className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 text-sm"
+                  className="px-3 py-1.5 bg-red-300 text-white rounded-lg hover:bg-red-400 transition duration-300 text-xs shadow-sm" // Lighter, smaller, less shadow
                   disabled={isLoading}
                 >
                   Delete
@@ -1450,1144 +1345,9 @@ function LeaveApproval({ userId, openConfirmModal }) {
   );
 }
 
-// Reporting Component (Admin) - This was the one with the original `no-undef` errors
-// Renamed to `OldReporting` to avoid confusion with `HourlyUpdatesReport`
-function OldReporting({ userId }) {
-  const [timesheetEntries, setTimesheetEntries] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedUser, setSelectedUser] = useState('');
-  const [selectedProject, setSelectedProject] = useState('');
-  // Corrected the missing states for task filtering and dropdown
-  const [tasks, setTasks] = useState([]); // All tasks
-  const [selectedTask, setSelectedTask] = useState(''); // State for selected task filter
-  const [startDateFilter, setStartDateFilter] = useState('');
-  const [endDateFilter, setEndDateFilter] = useState('');
-  const [reportData, setReportData] = useState({}); // Added reportData state
-
-  const fetchReportingData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [timesheetResponse, usersResponse, projectsResponse, tasksResponse] = await Promise.all([
-        authenticatedFetch(`${API_BASE_URL}/timesheets/`, { method: 'GET' }),
-        authenticatedFetch(`${API_BASE_URL}/users/`, { method: 'GET' }),
-        authenticatedFetch(`${API_BASE_URL}/projects/`, { method: 'GET' }),
-        authenticatedFetch(`${API_BASE_URL}/tasks/`, { method: 'GET' }), // Fetch tasks
-      ]);
-
-      if (timesheetResponse.ok) {
-        setTimesheetEntries(await timesheetResponse.json());
-      } else {
-        setMessage(`Failed to fetch timesheet data: ${timesheetResponse.statusText}`);
-      }
-      if (usersResponse.ok) {
-        setUsers(await usersResponse.json());
-      } else {
-        setMessage(`Failed to fetch users data: ${usersResponse.statusText}`);
-      }
-      if (projectsResponse.ok) {
-        const data = await projectsResponse.json();
-        setProjects(data);
-      } else {
-        setMessage(`Failed to fetch projects data: ${projectsResponse.statusText}`);
-      }
-      if (tasksResponse.ok) { // Set tasks
-        const data = await tasksResponse.json();
-        setTasks(data);
-      } else {
-        setMessage(`Failed to fetch tasks data: ${tasksResponse.statusText}`);
-      }
-    } catch (error) {
-      console.error('Error fetching reporting data:', error);
-      setMessage('Network error while fetching reporting data.');
-    } finally {
-      setIsLoading(false);
-      setTimeout(() => setMessage(''), 5000);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchReportingData();
-  }, [fetchReportingData]);
-
-  // Helper function to filter tasks for the dropdown based on selected project
-  const filteredTasksForDropdown = useCallback(() => {
-    if (!selectedProject) {
-      return tasks; // Show all tasks if no project filter is selected
-    }
-    return tasks.filter(task => task.project === parseInt(selectedProject));
-  }, [tasks, selectedProject]);
-
-
-  const generateReport = useCallback(() => {
-    let filteredEntries = timesheetEntries;
-
-    if (selectedUser) {
-      filteredEntries = filteredEntries.filter(entry => entry.user === parseInt(selectedUser));
-    }
-    if (selectedProject) {
-      // Filter by task's project ID, assuming entry.task is task ID
-      filteredEntries = filteredEntries.filter(entry => {
-        const task = tasks.find(t => t.id === entry.task);
-        return task && task.project === parseInt(selectedProject);
-      });
-    }
-    if (selectedTask) { // Added filter for selectedTask
-        filteredEntries = filteredEntries.filter(entry => entry.task === parseInt(selectedTask));
-    }
-    if (startDateFilter) {
-        filteredEntries = filteredEntries.filter(entry => moment(entry.date).isSameOrAfter(startDateFilter, 'day'));
-    }
-    if (endDateFilter) {
-        filteredEntries = filteredEntries.filter(entry => moment(entry.date).isSameOrBefore(endDateFilter, 'day'));
-    }
-
-
-    const totalHoursByUser = {};
-    const totalHoursByProject = {};
-
-    filteredEntries.forEach(entry => {
-      const userName = users.find(u => u.id === entry.user)?.username || `User ${entry.user}`;
-      const task = tasks.find(t => t.id === entry.task); // Find task object
-      const projectName = projects.find(p => p.id === task?.project)?.name || `Project ${task?.project}`; // Get project name via task
-
-      totalHoursByUser[userName] = (totalHoursByUser[userName] || 0) + parseFloat(entry.hours);
-      totalHoursByProject[projectName] = (totalHoursByProject[projectName] || 0) + parseFloat(entry.hours);
-    });
-
-    setReportData({
-      totalHoursByUser,
-      totalHoursByProject,
-    });
-  }, [timesheetEntries, selectedUser, selectedProject, selectedTask, startDateFilter, endDateFilter, users, projects, tasks]); // Added new deps
-
-  useEffect(() => {
-    generateReport();
-  }, [timesheetEntries, selectedUser, selectedProject, selectedTask, startDateFilter, endDateFilter, users, projects, tasks, generateReport]);
-
-  return (
-    <div className="p-4 bg-white rounded-lg shadow-inner">
-      <h3 className="text-2xl font-medium text-gray-700 mb-4">Reporting (Old Timesheet Entries)</h3>
-      {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-teal-100 border border-teal-400 text-teal-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
-          <span className="block sm:inline">{message}</span>
-        </div>
-      )}
-
-      <div className="mb-6 bg-teal-50 p-6 rounded-lg shadow-sm border border-teal-100 flex flex-wrap gap-4">
-        <div className="flex-1 min-w-[200px]">
-          <label htmlFor="reportUserSelect" className="block text-gray-700 text-sm font-bold mb-2">
-            Filter by User
-          </label>
-          <select
-            id="reportUserSelect"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-teal-200"
-            value={selectedUser}
-            onChange={(e) => setSelectedUser(e.target.value)}
-            disabled={isLoading}
-          >
-            <option value="">All Users</option>
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.username}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex-1 min-w-[200px]">
-          <label htmlFor="reportProjectSelect" className="block text-gray-700 text-sm font-bold mb-2">
-            Filter by Project
-          </label>
-          <select
-            id="reportProjectSelect"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-teal-200"
-            value={selectedProject}
-            onChange={(e) => {
-                setSelectedProject(e.target.value);
-                setSelectedTask(''); // Reset task filter when project changes
-            }}
-            disabled={isLoading}
-          >
-            <option value="">All Projects</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex-1 min-w-[200px]">
-          <label htmlFor="reportTaskSelect" className="block text-gray-700 text-sm font-bold mb-2">
-            Filter by Task
-          </label>
-          <select
-            id="reportTaskSelect"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-teal-200"
-            value={selectedTask}
-            onChange={(e) => setSelectedTask(e.target.value)}
-            disabled={isLoading || filteredTasksForDropdown().length === 0}
-          >
-            <option value="">All Tasks</option>
-            {filteredTasksForDropdown().map(task => (
-              <option key={task.id} value={task.id}>{task.name}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="startDateFilter" className="block text-gray-700 text-sm font-bold mb-2">Start Date:</label>
-          <input
-            type="date"
-            id="startDateFilter"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
-            value={startDateFilter}
-            onChange={(e) => setStartDateFilter(e.target.value)}
-            disabled={isLoading}
-          />
-        </div>
-        <div>
-          <label htmlFor="endDateFilter" className="block text-gray-700 text-sm font-bold mb-2">End Date:</label>
-          <input
-            type="date"
-            id="endDateFilter"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
-            value={endDateFilter}
-            onChange={(e) => setEndDateFilter(e.target.value)}
-            disabled={isLoading}
-          />
-        </div>
-        <div className="md:col-span-2 lg:col-span-1 flex items-end justify-end">
-          <button
-            onClick={() => {
-              setSelectedUser('');
-              setSelectedProject('');
-              setSelectedTask('');
-              setStartDateFilter('');
-              setEndDateFilter('');
-            }}
-            className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition duration-300 shadow-md w-full"
-            disabled={isLoading}
-          >
-            Clear Filters
-          </button>
-        </div>
-      </div>
-
-      {isLoading ? (
-        <p className="text-gray-500">Generating report...</p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-teal-50 p-6 rounded-lg shadow-sm border border-teal-100">
-            <h4 className="text-xl font-medium text-gray-700 mb-3">Total Hours by User</h4>
-            {Object.keys(reportData.totalHoursByUser || {}).length === 0 ? (
-              <p className="text-gray-500">No data for selected filters.</p>
-            ) : (
-              <ul className="space-y-2">
-                {Object.entries(reportData.totalHoursByUser).map(([user, hours]) => (
-                  <li key={user} className="flex justify-between items-center text-gray-700">
-                    <span>{user}:</span>
-                    <span className="font-semibold">{hours.toFixed(2)} hours</span>
-                  </li>
-                  ))}
-              </ul>
-            )}
-          </div>
-
-          <div className="bg-teal-50 p-6 rounded-lg shadow-sm border border-teal-100">
-            <h4 className="text-xl font-medium text-gray-700 mb-3">Total Hours by Project</h4>
-            {Object.keys(reportData.totalHoursByProject || {}).length === 0 ? (
-              <p className="text-gray-500">No data for selected filters.</p>
-            ) : (
-              <ul className="space-y-2">
-                {Object.entries(reportData.totalHoursByProject).map(([project, hours]) => (
-                  <li key={project} className="flex justify-between items-center text-gray-700">
-                    <span>{project}:</span>
-                    <span className="font-semibold">{hours.toFixed(2)} hours</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Calendar View Component - IMPROVED STYLING
-function CalendarView({ userId, userRole, viewTaskDetails }) { // Added viewTaskDetails prop
-  const [date, setDate] = useState(new Date());
-  const [events, setEvents] = useState([]);
-  const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-
-  const fetchCalendarEvents = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      let tasksUrl = `${API_BASE_URL}/tasks/`;
-      let leaveUrl = `${API_BASE_URL}/leave-requests/`;
-
-      if (userRole === 'user') {
-        tasksUrl += `?assigned_to=${userId}`;
-        leaveUrl += `?user=${userId}`;
-      }
-
-      const [tasksResponse, leaveResponse] = await Promise.all([
-        authenticatedFetch(tasksUrl, { method: 'GET' }),
-        authenticatedFetch(leaveUrl, { method: 'GET' }),
-      ]);
-
-      let fetchedEvents = [];
-
-      if (tasksResponse.ok) {
-        const tasksData = await tasksResponse.json();
-        tasksData.forEach(task => {
-          if (task.due_date) {
-            fetchedEvents.push({
-              id: `task-${task.id}`,
-              type: 'task',
-              title: task.name,
-              date: new Date(task.due_date),
-              status: task.status,
-              description: task.description,
-              project_name: task.project_name,
-              assigned_to_username: task.assigned_to_username,
-              parent_task_name: task.parent_task_name, // Include parent task name
-              taskId: task.id, // Pass task ID for clickability
-            });
-          }
-        });
-      } else {
-        setMessage(`Failed to fetch tasks for calendar: ${tasksResponse.statusText}`);
-      }
-
-      if (leaveResponse.ok) {
-        const leaveData = await leaveResponse.json();
-        leaveData.forEach(request => {
-          if (request.is_hourly) {
-            fetchedEvents.push({
-              id: `leave-${request.id}-${request.start_date}`,
-              type: 'leave',
-              title: `${request.user_username || 'Your'} Leave (${request.leave_type})`,
-              date: new Date(request.start_date),
-              status: request.status,
-              reason: request.reason,
-              is_hourly: true,
-              start_time: request.start_time,
-              end_time: request.end_time,
-            });
-          } else {
-            let currentDate = new Date(request.start_date);
-            const endDate = new Date(request.end_date);
-            while (currentDate <= endDate) {
-              fetchedEvents.push({
-                id: `leave-${request.id}-${currentDate.toISOString().split('T')[0]}`,
-                type: 'leave',
-                title: `${request.user_username || 'Your'} Leave (${request.leave_type})`,
-                date: new Date(currentDate),
-                status: request.status,
-                reason: request.reason,
-                is_hourly: false,
-              });
-              currentDate.setDate(currentDate.getDate() + 1);
-            }
-          }
-        });
-      } else {
-        setMessage(`Failed to fetch leave requests for calendar: ${leaveResponse.statusText}`);
-      }
-
-      setEvents(fetchedEvents);
-
-    } catch (error) {
-      console.error('Error fetching calendar events:', error);
-      setMessage('Network error while fetching calendar events.');
-    } finally {
-      setIsLoading(false);
-      setTimeout(() => setMessage(''), 5000);
-    }
-  }, [userId, userRole]);
-
-  useEffect(() => {
-    if (userId) {
-      fetchCalendarEvents();
-    }
-  }, [userId, fetchCalendarEvents]);
-
-  const tileContent = ({ date, view }) => {
-    if (view === 'month') {
-      const dayEvents = events.filter(event =>
-        event.date.toDateString() === date.toDateString()
-      );
-
-      return (
-        <div className="flex flex-col items-center justify-center text-xs mt-1">
-          {dayEvents.map(event => (
-            <div
-              key={event.id}
-              className={`w-full text-center rounded-sm px-0.5 py-0.5 my-0.5
-                ${event.type === 'task' ?
-                  (event.status === 'completed' ? 'bg-green-300 text-green-900' : 'bg-blue-300 text-blue-900') :
-                  (event.status === 'approved' ? 'bg-pink-300 text-pink-900' : event.status === 'pending' ? 'bg-yellow-300 text-yellow-900' : 'bg-red-300 text-red-900')
-                }
-                font-medium truncate`}
-              title={`${event.title} (${event.type === 'task' ? `Status: ${event.status}` :
-                (event.is_hourly ? `Status: ${event.status}, ${event.start_time}-${event.end_time}, Reason: ${event.reason}` : `Status: ${event.status}, Reason: ${event.reason}`)
-              }`}
-              onClick={(e) => { // Make calendar event clickable for tasks
-                e.stopPropagation(); // Prevent calendar tile click from propagating
-                if (event.type === 'task' && viewTaskDetails) {
-                  viewTaskDetails(event.taskId);
-                }
-              }}
-            >
-              {event.type === 'task' ? '✓ Task' : '✈︎ Leave'}
-            </div>
-          ))}
-        </div>
-      );
-    }
-    return null;
-  };
-
-  return (
-    <div className="p-4 bg-white rounded-lg shadow-xl border border-gray-200">
-      <h3 className="text-3xl font-bold text-gray-800 mb-6 text-center">WorkLog Calendar</h3>
-      {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-green-100 border border-green-400 text-green-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
-          <span className="block sm:inline">{message}</span>
-        </div>
-      )}
-      {/* Custom CSS for react-calendar */}
-      <style>
-        {`
-          .custom-calendar {
-            width: 100%;
-            max-width: 900px; /* Increased max-width for bigger calendar */
-            border: 1px solid #e2e8f0;
-            border-radius: 0.75rem; /* rounded-lg */
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
-            font-family: 'Inter', sans-serif;
-            background-color: #ffffff;
-            padding: 1.5rem; /* p-6 */
-          }
-
-          .custom-calendar .react-calendar__navigation {
-            display: flex;
-            margin-bottom: 1rem;
-            background-color: #f8fafc; /* gray-50 */
-            border-radius: 0.5rem;
-            padding: 0.5rem;
-            box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
-          }
-
-          .custom-calendar .react-calendar__navigation button {
-            min-width: 44px;
-            background: none;
-            font-size: 1.25rem; /* text-xl */
-            font-weight: 600; /* font-semibold */
-            color: #4a5568; /* gray-700 */
-            border-radius: 0.375rem;
-            transition: background-color 0.2s, color 0.2s;
-            padding: 0.5rem;
-            margin: 0 0.25rem;
-          }
-
-          .custom-calendar .react-calendar__navigation button:hover {
-            background-color: #e2e8f0; /* gray-200 */
-            color: #2d3748; /* gray-800 */
-          }
-
-          .custom-calendar .react-calendar__navigation button:disabled {
-            background-color: #edf2f7; /* gray-100 */
-            color: #a0aec0; /* gray-400 */
-            cursor: not-allowed;
-          }
-
-          .custom-calendar .react-calendar__navigation__label {
-            flex-grow: 1;
-            text-align: center;
-            font-size: 1.25rem; /* text-xl */
-            font-weight: 700; /* font-bold */
-            color: #2d3748; /* gray-800 */
-            padding: 0.5rem;
-          }
-
-          .custom-calendar .react-calendar__month-view__weekdays {
-            text-align: center;
-            text-transform: uppercase;
-            font-weight: 600; /* font-semibold */
-            font-size: 0.875rem; /* text-sm */
-            color: #4a5568; /* gray-700 */
-            margin-bottom: 0.5rem;
-          }
-
-          .custom-calendar .react-calendar__month-view__weekdays__weekday abbr {
-            text-decoration: none;
-          }
-
-          .custom-calendar .react-calendar__tile {
-            padding: 0.75rem 0.5rem; /* More padding for tiles */
-            text-align: center;
-            border-radius: 0.375rem; /* rounded-md */
-            transition: background-color 0.2s, color 0.2s;
-            position: relative;
-            min-height: 80px; /* Ensure enough height for content */
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-start;
-            align-items: center;
-          }
-
-          .custom-calendar .react-calendar__tile:hover {
-            background-color: #f0f4f8; /* Light hover effect */
-          }
-
-          .custom-calendar .react-calendar__tile--now {
-            background-color: #e0f2f7; /* Light blue for today */
-            color: #2c5282; /* Darker blue text */
-            font-weight: bold;
-          }
-
-          .custom-calendar .react-calendar__tile--active {
-            background-color: #63b3ed; /* Blue for selected date */
-            color: white;
-            font-weight: bold;
-          }
-
-          .custom-calendar .react-calendar__tile--active:enabled:hover {
-            background-color: #4299e1; /* Darker blue on hover for selected */
-          }
-
-          .custom-calendar .react-calendar__tile--hasActive {
-            background-color: #bfdbfe; /* Light blue for dates with active content */
-          }
-
-          .custom-calendar .react-calendar__month-view__days__day--weekend {
-            color: #e53e3e; /* Red for weekends */
-          }
-
-          .custom-calendar .react-calendar__tile--range {
-            background: #a3bffa; /* Light purple for range selection */
-            color: white;
-          }
-
-          .custom-calendar .react-calendar__tile--rangeStart,
-          .custom-calendar .react-calendar__tile--rangeEnd {
-            border-radius: 0.375rem;
-            background: #667eea; /* Darker purple for range ends */
-            color: white;
-          }
-
-          .custom-calendar .react-calendar__tile:disabled {
-            background-color: #f7fafc; /* Lighter background for disabled dates */
-            color: #cbd5e0; /* Lighter text for disabled dates */
-            cursor: not-allowed;
-          }
-
-          .custom-calendar .react-calendar__tile .flex-col {
-            width: 100%;
-            margin-top: 0.25rem; /* mt-1 */
-          }
-
-          .custom-calendar .react-calendar__tile .flex-col > div {
-            padding: 0.125rem 0.25rem; /* px-0.5 py-0.5 */
-            border-radius: 0.125rem; /* rounded-sm */
-            font-size: 0.7rem; /* text-xs, slightly smaller for events */
-            line-height: 1;
-            margin-bottom: 0.125rem; /* my-0.5 */
-            box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); /* subtle shadow for events */
-          }
-        `}
-      </style>
-      <div className="flex justify-center mb-8">
-        <Calendar
-          onChange={setDate}
-          value={date}
-          tileContent={tileContent}
-          className="custom-calendar" // Use the custom class
-        />
-      </div>
-
-      <h4 className="text-2xl font-semibold text-gray-700 mb-4 text-center">Events for {date.toDateString()}</h4>
-      {isLoading ? (
-        <p className="text-gray-500 text-center py-4">Loading events...</p>
-      ) : (
-        <div className="bg-gray-50 p-6 rounded-lg shadow-md border border-gray-100">
-          {events.filter(event => event.date.toDateString() === date.toDateString()).length === 0 ? (
-            <p className="text-gray-500 text-center py-4">No events on this date.</p>
-          ) : (
-            <ul className="space-y-4">
-              {events.filter(event => event.date.toDateString() === date.toDateString()).map(event => (
-                <li key={event.id}
-                    className={`p-4 rounded-lg shadow-sm border cursor-pointer
-                    ${event.type === 'task' ? 'bg-blue-100 border-blue-200 hover:bg-blue-200' : 'bg-pink-100 border-pink-200'}`}
-                    onClick={() => { // Make the list item clickable for tasks
-                      if (event.type === 'task' && viewTaskDetails) {
-                        viewTaskDetails(event.taskId);
-                      }
-                    }}>
-                  <div className="flex items-center mb-2">
-                    <span className={`text-xl mr-3 ${event.type === 'task' ? 'text-blue-600' : 'text-pink-600'}`}>
-                      {event.type === 'task' ? '✓' : '✈︎'}
-                    </span>
-                    <p className="font-bold text-xl text-gray-800">
-                      {event.title}
-                      {event.parent_task_name && <span className="text-gray-600 text-sm ml-2"> (Parent: {event.parent_task_name})</span>}
-                      <span className={`ml-3 px-3 py-1 rounded-full text-sm font-semibold
-                        ${event.type === 'task' ?
-                          (event.status === 'completed' ? 'bg-green-200 text-green-800' : 'bg-blue-200 text-blue-800') :
-                          (event.status === 'approved' ? 'bg-green-200 text-green-800' : event.status === 'pending' ? 'bg-yellow-200 text-yellow-800' : 'bg-red-200 text-red-800')
-                        }`}
-                      >
-                        {event.status.replace('_', ' ')}
-                      </span>
-                    </p>
-                  </div>
-                  {event.type === 'task' && (
-                    <div className="pl-8 text-gray-700 space-y-1">
-                      <p className="text-sm"><strong>Project:</strong> {event.project_name}</p>
-                      <p className="text-sm"><strong>Assigned To:</strong> {event.assigned_to_username}</p>
-                      <p className="text-sm"><strong>Description:</strong> {event.description}</p>
-                    </div>
-                  )}
-                  {event.type === 'leave' && (
-                    <div className="pl-8 text-gray-700 space-y-1">
-                      {event.is_hourly && (
-                        <p className="text-sm"><strong>Time:</strong> {event.start_time} - {event.end_time}</p>
-                      )}
-                      <p className="text-sm"><strong>Reason:</strong> {event.reason}</p>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Timesheet Entry Component (User) - Week View
-function TimesheetEntry({ userId, openConfirmModal }) {
-  const [currentWeekStart, setCurrentWeekStart] = useState(() => {
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const diff = today.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-    return new Date(today.setDate(diff));
-  });
-  const [weekDates, setWeekDates] = useState([]);
-  const [timesheetEntries, setTimesheetEntries] = useState([]); // Flat list of all entries for the week
-  const [userTasks, setUserTasks] = useState([]); // All tasks assigned to the user
-  const [projects, setProjects] = useState([]); // All projects
-  const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-
-  // State for dynamically added rows
-  const [dynamicRows, setDynamicRows] = useState([]); // { id: uniqueId, projectId: '', taskId: '', subtaskId: '' }
-  const nextRowId = useRef(0);
-
-  const saveTimeoutRef = useRef({}); // Use an object to store timeouts per entry
-
-  const fetchTimesheetData = useCallback(async (weekStartDate) => {
-    setIsLoading(true);
-    setMessage('');
-    const dates = getWeekDates(weekStartDate);
-    setWeekDates(dates);
-
-    const startDateStr = formatDate(dates[0]);
-    const endDateStr = formatDate(dates[6]);
-
-    try {
-      const [tasksResponse, entriesResponse, projectsResponse] = await Promise.all([
-        authenticatedFetch(`${API_BASE_URL}/tasks/?assigned_to=${userId}`, { method: 'GET' }),
-        authenticatedFetch(`${API_BASE_URL}/timesheets/?user=${userId}&start_date=${startDateStr}&end_date=${endDateStr}`, { method: 'GET' }),
-        authenticatedFetch(`${API_BASE_URL}/projects/`, { method: 'GET' }),
-      ]);
-
-      let fetchedTasks = [];
-      if (tasksResponse.ok) {
-        fetchedTasks = await tasksResponse.json();
-        setUserTasks(fetchedTasks);
-      } else {
-        const errorData = await tasksResponse.json();
-        setMessage(`Failed to fetch tasks: ${errorData.detail || 'Unknown error'}`);
-      }
-
-      let fetchedEntries = [];
-      if (entriesResponse.ok) {
-        fetchedEntries = await entriesResponse.json();
-        setTimesheetEntries(fetchedEntries);
-      } else {
-        const errorData = await entriesResponse.json();
-        setMessage(`Failed to fetch timesheet entries: ${errorData.detail || 'Unknown error'}`);
-      }
-
-      if (projectsResponse.ok) {
-        setProjects(await projectsResponse.json());
-      } else {
-        setMessage(`Failed to fetch projects: ${projectsResponse.statusText}`);
-      }
-
-      // Initialize dynamic rows based on fetched entries
-      const initialDynamicRows = [];
-      const usedTaskIds = new Set(); // To avoid duplicate rows for the same task
-      fetchedEntries.forEach(entry => {
-        if (!usedTaskIds.has(entry.task)) {
-          const task = fetchedTasks.find(t => t.id === entry.task);
-          if (task) {
-            initialDynamicRows.push({
-              id: nextRowId.current++,
-              projectId: task.project,
-              taskId: task.parent_task || task.id, // If it's a subtask, use its parent as main task
-              subtaskId: task.parent_task ? task.id : '', // If it's a subtask, set its ID
-            });
-            usedTaskIds.add(entry.task);
-          }
-        }
-      });
-
-      // Ensure there's always at least one empty row for new input
-      if (initialDynamicRows.length === 0) {
-        initialDynamicRows.push({
-          id: nextRowId.current++,
-          projectId: '',
-          taskId: '',
-          subtaskId: '',
-        });
-      } else {
-        // If there are existing entries, add one more empty row if the last one is filled
-        const lastRow = initialDynamicRows[initialDynamicRows.length - 1];
-        const lastRowTaskId = lastRow.subtaskId || lastRow.taskId;
-        const isLastRowFilled = lastRowTaskId && weekDates.some(date => {
-            const entry = timesheetEntries.find(e => e.task === parseInt(lastRowTaskId) && e.date === formatDate(date));
-            return entry && entry.hours > 0;
-        });
-
-        if (isLastRowFilled || !lastRowTaskId) { // If last row has hours or no task selected, add a new empty one
-            initialDynamicRows.push({
-                id: nextRowId.current++,
-                projectId: '',
-                taskId: '',
-                subtaskId: '',
-            });
-        }
-      }
-
-      setDynamicRows(initialDynamicRows);
-
-    } catch (error) {
-      console.error('Error fetching timesheet data:', error);
-      setMessage('Network error while fetching timesheet data.');
-    } finally {
-      setIsLoading(false);
-      setTimeout(() => setMessage(''), 5000);
-    }
-  }, [userId]); // Removed weekDates from deps to prevent re-fetch loop, it's set inside.
-
-  useEffect(() => {
-    if (userId) {
-      fetchTimesheetData(currentWeekStart);
-    }
-  }, [userId, currentWeekStart, fetchTimesheetData]);
-
-  const handleAddRow = () => {
-    setDynamicRows(prevRows => [
-      ...prevRows,
-      { id: nextRowId.current++, projectId: '', taskId: '', subtaskId: '' },
-    ]);
-  };
-
-  const handleRemoveRow = (rowId) => {
-    openConfirmModal('Are you sure you want to remove this row and any associated 0-hour entries?', () => {
-        setDynamicRows(prevRows => prevRows.filter(row => row.id !== rowId));
-        // Optionally, also remove any 0-hour entries associated with this row's task from timesheetEntries state
-        // This is more complex as it requires knowing the task associated with the row being removed
-        // For now, just remove the row from UI. Backend handles actual data persistence.
-    });
-  };
-
-  const handleRowSelectChange = (rowId, field, value) => {
-    setDynamicRows(prevRows =>
-      prevRows.map(row => {
-        if (row.id === rowId) {
-          const newRow = { ...row, [field]: value };
-          // Reset dependent fields if parent changes
-          if (field === 'projectId') {
-            newRow.taskId = '';
-            newRow.subtaskId = '';
-          } else if (field === 'taskId') {
-            newRow.subtaskId = '';
-          }
-          return newRow;
-        }
-        return row;
-      })
-    );
-  };
-
-  const handleHoursChange = (rowId, dateString, hoursInput) => {
-    // Clear previous timeout for this specific row and date combination
-    const entryKey = `${rowId}-${dateString}`;
-    if (saveTimeoutRef.current[entryKey]) {
-      clearTimeout(saveTimeoutRef.current[entryKey]);
-    }
-
-    const newHours = parseFloat(hoursInput) || 0;
-
-    // Find the current row to get the selected task hierarchy
-    const currentRow = dynamicRows.find(row => row.id === rowId);
-    if (!currentRow) {
-        console.error("Row not found for hours change:", rowId);
-        setMessage("Error: Timesheet row not found.");
-        return;
-    }
-
-    // Determine the actual task ID to log against (subtask if selected, otherwise main task)
-    const taskIdToLog = currentRow.subtaskId || currentRow.taskId;
-    if (!taskIdToLog) {
-        setMessage("Please select a Project and Task/Subtask before logging hours.");
-        setTimeout(() => setMessage(''), 3000);
-        return;
-    }
-
-    // Find if an existing entry for this task and date exists
-    const existingEntry = timesheetEntries.find(
-      entry => entry.task === parseInt(taskIdToLog) && entry.date === dateString
-    );
-
-    const entryToSave = {
-      id: existingEntry ? existingEntry.id : undefined,
-      task: parseInt(taskIdToLog),
-      date: dateString,
-      hours: newHours,
-      user: userId,
-    };
-
-    // Optimistically update the UI
-    setTimesheetEntries(prevEntries => {
-        const updatedEntries = prevEntries.filter(
-            e => !(e.task === entryToSave.task && e.date === entryToSave.date)
-        );
-        if (entryToSave.hours > 0) {
-            updatedEntries.push(entryToSave);
-        }
-        return updatedEntries;
-    });
-
-    saveTimeoutRef.current[entryKey] = setTimeout(async () => {
-      if (entryToSave.hours <= 0 && entryToSave.id) {
-        openConfirmModal('Hours are 0. Do you want to delete this timesheet entry?', async () => {
-          setIsLoading(true);
-          try {
-            const response = await authenticatedFetch(`${API_BASE_URL}/timesheets/${entryToSave.id}/`, {
-              method: 'DELETE',
-            });
-            if (response.ok) {
-              setMessage('Entry deleted successfully.');
-              fetchTimesheetData(currentWeekStart); // Re-fetch to ensure UI is consistent
-            } else {
-              const errorData = await response.json();
-              setMessage(`Failed to delete entry: ${errorData.detail || 'Unknown error'}`);
-            }
-          } catch (error) {
-            setMessage('Network error deleting entry.');
-          } finally {
-            setIsLoading(false);
-            setTimeout(() => setMessage(''), 5000);
-          }
-        });
-        return; // Exit here, action handled by modal
-      } else if (entryToSave.hours <= 0 && !entryToSave.id) {
-        // If hours are 0 and no existing ID, just do nothing (don't save a 0-hour new entry)
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        let response;
-        if (entryToSave.id) {
-          response = await authenticatedFetch(`${API_BASE_URL}/timesheets/${entryToSave.id}/`, {
-            method: 'PUT',
-            body: JSON.stringify(entryToSave),
-          });
-        } else {
-          response = await authenticatedFetch(`${API_BASE_URL}/timesheets/`, {
-            method: 'POST',
-            body: JSON.stringify(entryToSave),
-          });
-        }
-
-        if (response.ok) {
-          const savedEntry = await response.json();
-          setMessage('Timesheet entry saved!');
-          // Update the specific entry in the main timesheetEntries state
-          setTimesheetEntries(prevEntries => {
-            const updatedEntries = prevEntries.filter(
-                e => !(e.task === savedEntry.task && e.date === savedEntry.date)
-            );
-            updatedEntries.push(savedEntry);
-            return updatedEntries;
-          });
-        } else {
-          const errorData = await response.json();
-          setMessage(`Failed to save entry: ${errorData.non_field_errors || errorData.detail || 'Unknown error'}`);
-          // Revert optimistic update if save fails
-          fetchTimesheetData(currentWeekStart);
-        }
-      } catch (error) {
-        console.error('Error saving timesheet entry:', error);
-        setMessage('Network error while saving timesheet entry.');
-        // Revert optimistic update if save fails
-        fetchTimesheetData(currentWeekStart);
-      } finally {
-        setIsLoading(false);
-        setTimeout(() => setMessage(''), 5000);
-      }
-    }, 1000); // 1-second debounce
-  };
-
-  const handlePreviousWeek = useCallback(() => {
-    const newDate = new Date(currentWeekStart);
-    newDate.setDate(newDate.getDate() - 7);
-    setCurrentWeekStart(newDate);
-  }, [currentWeekStart]);
-
-  const handleNextWeek = useCallback(() => {
-    const newDate = new Date(currentWeekStart);
-    newDate.setDate(newDate.getDate() + 7);
-    setCurrentWeekStart(newDate);
-  }, [currentWeekStart]);
-
-  const getWeekRangeString = useCallback(() => {
-    if (weekDates.length === 0) return 'Loading Week...';
-    const start = weekDates[0];
-    const end = weekDates[6];
-    const options = { month: 'short', day: 'numeric' };
-    return `${start.toLocaleDateString('en-US', options)} - ${end.toLocaleDateString('en-US', options)}`;
-  }, [weekDates]);
-
-  const getDailyTotal = useCallback((dateString) => {
-    let total = 0;
-    timesheetEntries.forEach(entry => {
-      if (entry.date === dateString) {
-        total += parseFloat(entry.hours);
-      }
-    });
-    return total.toFixed(2);
-  }, [timesheetEntries]);
-
-  const getRowTotal = useCallback((rowId) => {
-    let total = 0;
-    const currentRow = dynamicRows.find(row => row.id === rowId);
-    if (!currentRow) return '0.00';
-
-    const taskIdToLog = currentRow.subtaskId || currentRow.taskId;
-    if (!taskIdToLog) return '0.00';
-
-    weekDates.forEach(date => {
-      const dateString = formatDate(date);
-      const entry = timesheetEntries.find(e => e.task === parseInt(taskIdToLog) && e.date === dateString);
-      if (entry && entry.hours) {
-        total += parseFloat(entry.hours);
-      }
-    });
-    return total.toFixed(2);
-  }, [dynamicRows, timesheetEntries, weekDates]);
-
-  const getGrandTotal = useCallback(() => {
-    let grandTotal = 0;
-    weekDates.forEach(date => {
-      grandTotal += parseFloat(getDailyTotal(formatDate(date)));
-    });
-    return grandTotal.toFixed(2);
-  }, [weekDates, getDailyTotal]);
-
-  // Filter tasks based on selected project and parent task for dropdowns
-  const getTasksForProject = useCallback((projectId) => {
-    // Return top-level tasks for the selected project
-    return userTasks.filter(task => task.project === parseInt(projectId) && task.parent_task === null);
-  }, [userTasks]);
-
-  const getSubtasksForTask = useCallback((taskId) => {
-    // Return subtasks whose parent is the selected taskId
-    return userTasks.filter(task => task.parent_task === parseInt(taskId));
-  }, [userTasks]);
-
-
-  return (
-    <div className="p-4 bg-white rounded-lg shadow-inner">
-      <h3 className="text-2xl font-medium text-gray-700 mb-4">Timesheet Week View</h3>
-      {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') || message.includes('saved') ? 'bg-yellow-100 border border-yellow-400 text-yellow-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
-          <span className="block sm:inline">{message}</span>
-        </div>
-      )}
-
-      <div className="flex justify-between items-center mb-6 bg-gray-50 p-4 rounded-lg shadow-sm border border-gray-100">
-        <button
-          onClick={handlePreviousWeek}
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition duration-300"
-          disabled={isLoading}
-        >
-          &larr; Previous Week
-        </button>
-        <h4 className="text-xl font-semibold text-gray-800">{getWeekRangeString()}</h4>
-        <button
-          onClick={handleNextWeek}
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition duration-300"
-          disabled={isLoading}
-        >
-          Next Week &rarr;
-        </button>
-      </div>
-
-      {isLoading && userTasks.length === 0 && timesheetEntries.length === 0 ? (
-        <p className="text-gray-500 text-center py-8">Loading timesheet data...</p>
-      ) : userTasks.length === 0 ? (
-        <p className="text-gray-500 text-center py-8">No tasks assigned to you. Please contact your admin.</p>
-      ) : (
-        <div className="overflow-x-auto relative shadow-md sm:rounded-lg">
-          <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-            <thead className="text-xs text-gray-700 uppercase bg-gray-200 dark:bg-gray-700 dark:text-gray-400">
-              <tr>
-                <th scope="col" className="py-3 px-6 min-w-[300px]">Project / Task / Subtask</th>
-                {weekDates.map((date, index) => (
-                  <th key={index} scope="col" className="py-3 px-6 text-center">
-                    {getDayName(date)}<br/>{date.getDate()}
-                  </th>
-                ))}
-                <th scope="col" className="py-3 px-6 text-center">Total</th>
-                <th scope="col" className="py-3 px-6 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dynamicRows.map((row, rowIndex) => {
-                const selectedProjectObj = projects.find(p => p.id === parseInt(row.projectId));
-                const selectedMainTaskObj = userTasks.find(t => t.id === parseInt(row.taskId));
-                const selectedSubtaskObj = userTasks.find(t => t.id === parseInt(row.subtaskId));
-
-                // Determine the actual task ID this row represents for logging
-                const taskForLogging = selectedSubtaskObj || selectedMainTaskObj;
-                const taskIdForLogging = taskForLogging ? taskForLogging.id : null;
-
-                return (
-                  <tr key={row.id} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
-                    <td className="py-4 px-6">
-                      <div className="flex flex-col space-y-2">
-                        {/* Project Dropdown */}
-                        <select
-                          className="w-full p-2 border rounded-md focus:ring-blue-300 focus:border-blue-300 transition duration-150"
-                          value={row.projectId}
-                          onChange={(e) => handleRowSelectChange(row.id, 'projectId', e.target.value)}
-                          disabled={isLoading}
-                        >
-                          <option value="">Select Project</option>
-                          {projects.map(project => (
-                            <option key={project.id} value={project.id}>{project.name}</option>
-                          ))}
-                        </select>
-
-                        {/* Main Task Dropdown */}
-                        <select
-                          className="w-full p-2 border rounded-md focus:ring-blue-300 focus:border-blue-300 transition duration-150"
-                          value={row.taskId}
-                          onChange={(e) => handleRowSelectChange(row.id, 'taskId', e.target.value)}
-                          disabled={isLoading || !row.projectId || getTasksForProject(row.projectId).length === 0}
-                        >
-                          <option value="">Select Main Task</option>
-                          {getTasksForProject(row.projectId).map(task => (
-                            <option key={task.id} value={task.id}>{task.name}</option>
-                          ))}
-                        </select>
-
-                        {/* Subtask Dropdown */}
-                        {row.taskId && getSubtasksForTask(row.taskId).length > 0 && (
-                          <select
-                            className="w-full p-2 border rounded-md focus:ring-blue-300 focus:border-blue-300 transition duration-150"
-                            value={row.subtaskId}
-                            onChange={(e) => handleRowSelectChange(row.id, 'subtaskId', e.target.value)}
-                            disabled={isLoading}
-                          >
-                            <option value="">Select Subtask (Optional)</option>
-                            {getSubtasksForTask(row.taskId).map(subtask => (
-                              <option key={subtask.id} value={subtask.id}>{subtask.name}</option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    </td>
-                    {weekDates.map((date, dateIndex) => {
-                      const dateString = formatDate(date);
-                      // Find the entry for this specific task (main or sub) and date
-                      const entry = timesheetEntries.find(
-                        e => e.task === parseInt(taskIdForLogging) && e.date === dateString
-                      );
-                      return (
-                        <td key={dateIndex} className="py-4 px-2 text-center">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={entry?.hours || ''}
-                            onChange={(e) => handleHoursChange(row.id, dateString, e.target.value)}
-                            className="w-20 p-2 border rounded-md text-center focus:ring-blue-300 focus:border-blue-300 transition duration-150"
-                            disabled={isLoading || !taskIdForLogging} // Disable if no task selected
-                          />
-                        </td>
-                      );
-                    })}
-                    <td className="py-4 px-6 text-center font-bold text-gray-900 dark:text-white">
-                      {getRowTotal(row.id)}
-                    </td>
-                    <td className="py-4 px-6 text-center">
-                      {dynamicRows.length > 1 && ( // Only show remove button if more than one row
-                        <button
-                          onClick={() => handleRemoveRow(row.id)}
-                          className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 text-sm"
-                          disabled={isLoading}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {/* Add Row Button */}
-              <tr>
-                <td colSpan={weekDates.length + 3} className="py-4 px-6 text-center">
-                  <button
-                    onClick={handleAddRow}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition duration-300 shadow-md"
-                    disabled={isLoading}
-                  >
-                    Add Timesheet Row
-                  </button>
-                </td>
-              </tr>
-              {/* Total Row - Ensure no whitespace between <td> and its content, and no empty <td> tags */}
-              <tr className="bg-gray-200 dark:bg-gray-700 text-gray-700 uppercase font-bold">
-                <td className="py-3 px-6">Total</td>
-                {weekDates.map((date, index) => (
-                  <td key={index} className="py-3 px-6 text-center">
-                    {getDailyTotal(formatDate(date))}
-                  </td>
-                ))}
-                <td className="py-3 px-6 text-center"></td> {/* Empty cell for actions column, but no trailing whitespace */}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // Leave Request Component (User)
-function LeaveRequest({ userId, openConfirmModal }) {
+function LeaveRequest({ userId, openConfirmModal, onLeaveStatusChange }) { // Added onLeaveStatusChange prop
   const [leaveType, setLeaveType] = useState('sick');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -2601,32 +1361,36 @@ function LeaveRequest({ userId, openConfirmModal }) {
   const [editingRequest, setEditingRequest] = useState(null);
 
   const fetchLeaveRequests = useCallback(async () => {
+    console.log('[LeaveRequest] fetchLeaveRequests: Starting fetch for user', userId);
     setIsLoading(true);
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/leave-requests/`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}/leave-requests/?user=${userId}`, { // Ensure user-specific fetch
         method: 'GET',
       });
       if (response.ok) {
         const data = await response.json();
+        console.log('[LeaveRequest] fetchLeaveRequests: Data fetched successfully.', data);
         setLeaveRequests(data);
       } else {
         const errorData = await response.json();
+        console.error('[LeaveRequest] fetchLeaveRequests: Failed to fetch.', response.status, errorData);
         setMessage(`Failed to fetch leave requests: ${errorData.detail || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('Error fetching leave requests:', error);
+      console.error('[LeaveRequest] fetchLeaveRequests: Network error.', error);
       setMessage('Network error while fetching leave requests.');
     } finally {
       setIsLoading(false);
       setTimeout(() => setMessage(''), 5000);
     }
-  }, []);
+  }, [userId, authenticatedFetch]); // Added authenticatedFetch to dependencies
 
   useEffect(() => {
-    if (userId) {
+    console.log('[LeaveRequest] useEffect triggered. userId:', userId, 'onLeaveStatusChange count:', onLeaveStatusChange);
+    if (userId) { // Only fetch if userId is available
       fetchLeaveRequests();
     }
-  }, [userId, fetchLeaveRequests]);
+  }, [userId, fetchLeaveRequests, onLeaveStatusChange]); // Added onLeaveStatusChange to trigger re-fetch on status change from admin
 
   const handleSubmitLeave = async (e) => {
     e.preventDefault();
@@ -2664,6 +1428,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
         }
     }
 
+    console.log('[LeaveRequest] handleSubmitLeave: Submitting new leave request.');
     setIsLoading(true);
     try {
       const payload = {
@@ -2683,6 +1448,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
       });
 
       if (response.ok) {
+        console.log('[LeaveRequest] handleSubmitLeave: Request submitted successfully.');
         setMessage('Leave request submitted successfully! Awaiting approval.');
         setLeaveType('sick');
         setStartDate('');
@@ -2694,11 +1460,12 @@ function LeaveRequest({ userId, openConfirmModal }) {
         fetchLeaveRequests();
       } else {
         const errorData = await response.json();
+        console.error('[LeaveRequest] handleSubmitLeave: Failed to submit.', response.status, errorData);
         setMessage(`Failed to submit leave request: ${errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('Error submitting leave request:', error);
-      setMessage('Network error while submitting leave request.');
+      console.error('[LeaveRequest] handleSubmitLeave: Network error.', error);
+      setMessage('An error occurred during submission. Please check your network.');
     } finally {
       setIsLoading(false);
       setTimeout(() => setMessage(''), 5000);
@@ -2706,6 +1473,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
   };
 
   const handleEditLeaveRequest = (request) => {
+    console.log('[LeaveRequest] handleEditLeaveRequest: Editing request', request.id);
     setEditingRequest(request);
     setLeaveType(request.leave_type);
     setStartDate(request.start_date);
@@ -2752,6 +1520,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
             }
     }
 
+    console.log('[LeaveRequest] handleUpdateLeaveRequest: Updating request', editingRequest.id);
     setIsLoading(true);
     try {
       const payload = {
@@ -2771,6 +1540,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
       });
 
       if (response.ok) {
+        console.log('[LeaveRequest] handleUpdateLeaveRequest: Request updated successfully.');
         setMessage('Leave request updated successfully!');
         setEditingRequest(null);
         setLeaveType('sick');
@@ -2783,10 +1553,11 @@ function LeaveRequest({ userId, openConfirmModal }) {
         fetchLeaveRequests();
       } else {
         const errorData = await response.json();
+        console.error('[LeaveRequest] handleUpdateLeaveRequest: Failed to update.', response.status, errorData);
         setMessage(`Failed to update leave request: ${errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('Error updating leave request:', error);
+      console.error('[LeaveRequest] handleUpdateLeaveRequest: Network error.', error);
       setMessage('Network error while updating leave request.');
     } finally {
       setIsLoading(false);
@@ -2796,6 +1567,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
 
   const handleDeleteLeaveRequest = (requestId) => {
     openConfirmModal('Are you sure you want to delete this leave request? This action cannot be undone.', async () => {
+      console.log('[LeaveRequest] handleDeleteLeaveRequest: Deleting request', requestId);
       setIsLoading(true);
       try {
         const response = await authenticatedFetch(`${API_BASE_URL}/leave-requests/${requestId}/`, {
@@ -2803,14 +1575,16 @@ function LeaveRequest({ userId, openConfirmModal }) {
         });
 
         if (response.ok) {
+          console.log('[LeaveRequest] handleDeleteLeaveRequest: Request deleted successfully.');
           setMessage('Leave request deleted successfully!');
           fetchLeaveRequests();
         } else {
           const errorData = await response.json();
+          console.error('[LeaveRequest] handleDeleteLeaveRequest: Failed to delete.', response.status, errorData);
           setMessage(`Failed to delete leave request: ${errorData.detail || 'Unknown error'}`);
         }
       } catch (error) {
-        console.error('Error deleting leave request:', error);
+        console.error('[LeaveRequest] handleDeleteLeaveRequest: Network error.', error);
         setMessage('Network error while deleting leave request.');
       } finally {
         setIsLoading(false);
@@ -2823,7 +1597,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
     <div className="p-4 bg-white rounded-lg shadow-inner">
       <h3 className="text-2xl font-medium text-gray-700 mb-4">Request Time Off</h3>
       {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-pink-100 border border-pink-400 text-pink-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-pink-100 border border-pink-400 text-pink-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
           <span className="block sm:inline">{message}</span>
         </div>
       )}
@@ -2866,7 +1640,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
           </label>
           <select
             id="leaveType"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200" // Smaller padding, lighter ring
             value={leaveType}
             onChange={(e) => setLeaveType(e.target.value)}
             required
@@ -2885,7 +1659,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
           <input
             type="date"
             id="startDate"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200" // Smaller padding, lighter ring
             value={startDate}
             onChange={(e) => {
                 setStartDate(e.target.value);
@@ -2906,7 +1680,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
             <input
               type="date"
               id="endDate"
-              className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200"
+              className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200" // Smaller padding, lighter ring
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
               required={!isHourly}
@@ -2924,7 +1698,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
               <input
                 type="time"
                 id="startTime"
-                className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200"
+                className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200" // Smaller padding, lighter ring
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
                 required={isHourly}
@@ -2938,7 +1712,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
               <input
                 type="time"
                 id="endTime"
-                className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200"
+                className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200" // Smaller padding, lighter ring
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
                 required={isHourly}
@@ -2954,7 +1728,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
           </label>
           <textarea
             id="reason"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-pink-200" // Smaller padding, lighter ring
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Brief reason for your leave"
@@ -2966,7 +1740,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
         <div className="flex space-x-4">
           <button
             type="submit"
-            className="bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
+            className="bg-pink-300 hover:bg-pink-400 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out transform hover:scale-105 text-sm" // Lighter, smaller, less shadow
             disabled={isLoading || (editingRequest && editingRequest.status !== 'pending')}
           >
             {isLoading ? (editingRequest ? 'Updating...' : 'Submitting...') : (editingRequest ? 'Update Request' : 'Submit Request')}
@@ -2975,7 +1749,7 @@ function LeaveRequest({ userId, openConfirmModal }) {
             <button
               type="button"
               onClick={() => { setEditingRequest(null); setLeaveType('sick'); setStartDate(''); setEndDate(''); setReason(''); setIsHourly(false); setStartTime(''); setEndTime(''); }}
-              className="bg-gray-400 hover:bg-gray-500 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
+              className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out transform hover:scale-105 text-sm" // Lighter, smaller, less shadow
               disabled={isLoading}
             >
               Cancel Edit
@@ -2986,25 +1760,25 @@ function LeaveRequest({ userId, openConfirmModal }) {
 
       <h4 className="text-xl font-medium text-gray-700 mb-3">Your Leave Requests</h4>
       {isLoading && leaveRequests.length === 0 ? (
-        <p className="text-gray-500">Loading leave requests...</p>
+        <p className="text-gray-500">Loading your time entries...</p>
       ) : leaveRequests.length === 0 ? (
         <p className="text-gray-500">No leave requests submitted yet. Submit one above!</p>
       ) : (
-        <ul className="space-y-4">
+        <ul className="space-y-3"> {/* Slightly reduced spacing */}
           {leaveRequests.map((request) => (
-            <li key={request.id} className="bg-pink-50 p-4 rounded-lg shadow-sm border border-pink-100 flex flex-col sm:flex-row justify-between items-start sm:items-center">
-              <div className="mb-2 sm:mb-0">
-                <p className="font-semibold text-lg text-pink-800">
+            <li key={request.id} className="bg-pink-50 p-3 rounded-lg shadow-sm border border-pink-100 flex flex-col sm:flex-row justify-between items-start sm:items-center"> {/* Smaller padding */}
+              <div className="mb-1 sm:mb-0"> {/* Smaller margin */}
+                <p className="font-semibold text-base text-pink-800">
                     {request.leave_type}
                     {request.is_hourly && ` (${request.start_time} - ${request.end_time})`}
                 </p>
-                <p className="text-gray-600 text-sm">
+                <p className="text-gray-600 text-xs"> {/* Smaller font */}
                   {request.start_date} {request.is_hourly ? '' : `to ${request.end_date}`}
                 </p>
-                <p className="text-gray-600 text-sm italic">Reason: {request.reason}</p>
-                <p className="text-gray-600 text-sm">Status:
+                <p className="text-gray-600 text-xs italic">Reason: {request.reason}</p> {/* Smaller font */}
+                <p className="text-gray-600 text-xs">Status:
                   <span
-                    className={`ml-2 px-3 py-1 rounded-full text-sm font-semibold ${
+                    className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold ${ // Smaller padding for status tag
                       request.status === 'approved' ? 'bg-green-200 text-green-800' :
                       request.status === 'pending' ? 'bg-yellow-200 text-yellow-800' :
                       'bg-red-200 text-red-800'
@@ -3013,21 +1787,21 @@ function LeaveRequest({ userId, openConfirmModal }) {
                     {request.status}
                   </span>
                 </p>
-                {request.admin_comments && <p className="text-gray-600 text-sm">Admin Comments: {request.admin_comments}</p>}
-                {request.approved_by_username && <p className="text-gray-600 text-sm">Approved By: {request.approved_by_username}</p>}
+                {request.admin_comments && <p className="text-gray-600 text-xs">Admin Comments: {request.admin_comments}</p>} {/* Smaller font */}
+                {request.approved_by_username && <p className="text-gray-600 text-xs">Approved By: {request.approved_by_username}</p>} {/* Smaller font */}
               </div>
               <div className="flex space-x-2 mt-2 sm:mt-0">
                 {request.status === 'pending' && (
                   <button
                     onClick={() => handleEditLeaveRequest(request)}
-                    className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition duration-300 text-sm"
+                    className="px-3 py-1.5 bg-yellow-300 text-gray-800 rounded-lg hover:bg-yellow-400 transition duration-300 text-xs shadow-sm" // Lighter, smaller, less shadow
                   >
                     Edit
                   </button>
                 )}
                 <button
                   onClick={() => handleDeleteLeaveRequest(request.id)}
-                  className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 text-sm"
+                  className="px-3 py-1.5 bg-red-300 text-white rounded-lg hover:bg-red-400 transition duration-300 text-xs shadow-sm" // Lighter, smaller, less shadow
                   disabled={isLoading}
                 >
                   Delete
@@ -3042,14 +1816,16 @@ function LeaveRequest({ userId, openConfirmModal }) {
 }
 
 // NEW COMPONENT: UserTaskManagement
-function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // Added viewTaskDetails prop
+function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails, onMyTasksViewed }) { // Added onMyTasksViewed prop
   const [projects, setProjects] = useState([]);
+  const [users, setUsers] = useState([]); // All users (to filter admins for reporting manager)
+  const [adminUsers, setAdminUsers] = useState([]); // Only admin users for reporting manager
   const [userTasks, setUserTasks] = useState([]); // Tasks assigned to this user (for parent task dropdown)
   const [selectedProject, setSelectedProject] = useState('');
-  const [selectedParentTask, setSelectedParentTask] = useState('');
   const [newTaskName, setNewTaskName] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [reportingManager, setReportingManager] = useState(''); // NEW STATE: Reporting Manager
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -3064,10 +1840,24 @@ function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // 
         setMessage(`Failed to fetch projects: ${projectsResponse.statusText}`);
       }
 
-      // Fetch tasks assigned to the current user (these can be parent tasks)
+      // Fetch all users to filter for admins
+      const usersResponse = await authenticatedFetch(`${API_BASE_URL}/users/`, { method: 'GET' });
+      if (usersResponse.ok) {
+        const data = await usersResponse.json();
+        setUsers(data); // Store all users
+        const staffUsers = data.filter(user => user.is_staff); // Filter for admin users
+        setAdminUsers(staffUsers);
+        // Set first admin user as default reporting manager if available
+        if (staffUsers.length > 0) setReportingManager(staffUsers[0].id);
+      } else {
+        setMessage(`Failed to fetch users: ${usersResponse.statusText}`);
+      }
+
+      // Fetch tasks assigned to the current user
       const tasksResponse = await authenticatedFetch(`${API_BASE_URL}/tasks/?assigned_to=${userId}`, { method: 'GET' });
       if (tasksResponse.ok) {
         setUserTasks(await tasksResponse.json());
+        onMyTasksViewed(userId); // Mark tasks as viewed when this component loads
       } else {
         setMessage(`Failed to fetch user tasks: ${tasksResponse.statusText}`);
       }
@@ -3079,10 +1869,10 @@ function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // 
       setIsLoading(false);
       setTimeout(() => setMessage(''), 5000);
     }
-  }, [userId]);
+  }, [userId, authenticatedFetch, onMyTasksViewed]); // Added onMyTasksViewed to dependencies
 
   useEffect(() => {
-    if (userId) {
+    if (userId) { // Only fetch if userId is available
       fetchUserProjectsAndTasks();
     }
   }, [userId, fetchUserProjectsAndTasks]);
@@ -3105,9 +1895,10 @@ function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // 
         description: newTaskDescription,
         assigned_to: userId, // Automatically assign to the current user
         due_date: newTaskDueDate || null,
-        parent_task: selectedParentTask || null,
+        parent_task: null, // Always null as parent task is removed
         status: 'pending', // Default status for user-created tasks
         progress: 0, // Default progress
+        reporting_manager: reportingManager || null, // Include reporting manager
       };
 
       const response = await authenticatedFetch(`${API_BASE_URL}/tasks/`, {
@@ -3116,12 +1907,12 @@ function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // 
       });
 
       if (response.ok) {
-        setMessage('Task/Subtask created successfully!');
+        setMessage('Task created successfully!');
         setNewTaskName('');
         setNewTaskDescription('');
         setNewTaskDueDate('');
-        setSelectedParentTask('');
         setSelectedProject(''); // Optionally reset project too
+        setReportingManager(adminUsers.length > 0 ? adminUsers[0].id : ''); // Reset reporting manager
         fetchUserProjectsAndTasks(); // Re-fetch to update the task list
       } else {
         const errorData = await response.json();
@@ -3136,55 +1927,21 @@ function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // 
     }
   };
 
-  // Filter tasks that can be parent tasks for the selected project and assigned to this user
-  const availableParentTasks = userTasks.filter(task =>
-    task.project === parseInt(selectedProject) && task.parent_task === null
-  );
-
-  // Helper to render tasks hierarchically for UserTaskManagement
-  const renderUserTasks = (tasksToRender, depth = 0) => {
-    return tasksToRender.map(task => (
-      <React.Fragment key={task.id}>
-        <li
-          className={`bg-indigo-50 p-4 rounded-lg shadow-sm border border-indigo-100 flex flex-col sm:flex-row justify-between items-start sm:items-center cursor-pointer hover:bg-indigo-100`}
-          style={{ marginLeft: `${depth * 20}px` }} // Indent subtasks
-          onClick={() => viewTaskDetails(task.id)} // Make task clickable
-        >
-          <div className="mb-2 sm:mb-0">
-            <p className="font-semibold text-lg text-indigo-800">
-              {depth > 0 && '↳ '} {/* Arrow for subtasks */}
-              {task.name} (Project: {task.project_name})
-            </p>
-            {task.parent_task_name && <p className="text-gray-600 text-sm">Parent: {task.parent_task_name}</p>}
-            <p className="text-gray-600 text-sm">Due Date: {task.due_date || 'N/A'}</p>
-            <p className="text-gray-600 text-sm">Status: <span className={`font-semibold ${task.status === 'completed' ? 'text-green-600' : task.status === 'in_progress' ? 'text-blue-600' : 'text-yellow-600'}`}>{task.status}</span></p>
-            <p className="text-gray-600 text-sm">Progress: {task.progress}%</p>
-          </div>
-          {/* No edit/delete buttons here, as per user's request for UserTaskManagement */}
-        </li>
-        {/* Recursively render subtasks if they exist */}
-        {task.subtasks_ids && task.subtasks_ids.length > 0 && (
-          renderUserTasks(userTasks.filter(t => task.subtasks_ids.includes(t.id)), depth + 1)
-        )}
-      </React.Fragment>
-    ));
-  };
-
+  const getUserName = (userId) => users.find(u => u.id === userId)?.username || 'N/A';
 
   return (
     <div className="p-4 bg-white rounded-lg shadow-inner">
-      <h3 className="text-2xl font-medium text-gray-700 mb-4">Create My Tasks/Subtasks</h3>
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">My Tasks</h3>
       <p className="text-gray-600 mb-4">
-        Here you can create new tasks for yourself. If you select a "Parent Task," the new entry will be a subtask under it.
-        Otherwise, it will be a main task. Click on an existing task below to view its details and log hourly time.
+        Here you can create new tasks for yourself. Click on an existing task below to view its details and log hourly time.
       </p>
       {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-indigo-100 border border-indigo-400 text-indigo-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-indigo-100 border border-indigo-400 text-indigo-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
           <span className="block sm:inline">{message}</span>
         </div>
       )}
       <form onSubmit={handleCreateTask} className="mb-6 bg-indigo-50 p-6 rounded-lg shadow-sm border border-indigo-100">
-        <h4 className="text-xl font-medium text-gray-700 mb-4">New Task/Subtask Details</h4>
+        <h4 className="text-xl font-medium text-gray-700 mb-4">New Task Details</h4>
 
         <div className="mb-4">
           <label htmlFor="selectProjectUser" className="block text-gray-700 text-sm font-bold mb-2">
@@ -3192,11 +1949,10 @@ function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // 
           </label>
           <select
             id="selectProjectUser"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200" // Smaller padding, lighter ring
             value={selectedProject}
             onChange={(e) => {
               setSelectedProject(e.target.value);
-              setSelectedParentTask(''); // Reset parent task when project changes
             }}
             required
             disabled={isLoading || projects.length === 0}
@@ -3212,38 +1968,16 @@ function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // 
         </div>
 
         <div className="mb-4">
-          <label htmlFor="selectedParentTaskUser" className="block text-gray-700 text-sm font-bold mb-2">
-            Parent Task (Optional, for Sub-tasks)
-          </label>
-          <select
-            id="selectedParentTaskUser"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200"
-            value={selectedParentTask}
-            onChange={(e) => setSelectedParentTask(e.target.value)}
-            disabled={isLoading || !selectedProject || availableParentTasks.length === 0}
-          >
-            <option value="">No Parent Task (This is a main task)</option>
-            {availableParentTasks.map((task) => (
-              <option key={task.id} value={task.id}>
-                {task.name}
-              </option>
-            ))}
-          </select>
-          {!selectedProject && <p className="text-sm text-gray-500 mt-1">Select a project to see available parent tasks.</p>}
-          {selectedProject && availableParentTasks.length === 0 && <p className="text-sm text-gray-500 mt-1">No main tasks assigned to you under this project that can be parents.</p>}
-        </div>
-
-        <div className="mb-4">
           <label htmlFor="newTaskNameUser" className="block text-gray-700 text-sm font-bold mb-2">
-            Task/Subtask Name
+            Task Name
           </label>
           <input
             type="text"
             id="newTaskNameUser"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200" // Smaller padding, lighter ring
             value={newTaskName}
             onChange={(e) => setNewTaskName(e.target.value)}
-            placeholder={selectedParentTask ? "e.g., Implement login button" : "e.g., Develop user authentication"}
+            placeholder="e.g., Develop user authentication"
             required
             disabled={isLoading}
           />
@@ -3254,10 +1988,10 @@ function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // 
           </label>
           <textarea
             id="newTaskDescriptionUser"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200" // Smaller padding, lighter ring
             value={newTaskDescription}
             onChange={(e) => setNewTaskDescription(e.target.value)}
-            placeholder="Detailed description of your task or subtask"
+            placeholder="Detailed description of your task"
             rows="3"
             disabled={isLoading}
           ></textarea>
@@ -3269,15 +2003,37 @@ function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // 
           <input
             type="date"
             id="newTaskDueDateUser"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200" // Smaller padding, lighter ring
             value={newTaskDueDate}
             onChange={(e) => setNewTaskDueDate(e.target.value)}
             disabled={isLoading}
           />
         </div>
+        {/* NEW FIELD: Reporting Manager - Now only shows admin users */}
+        <div className="mb-4">
+          <label htmlFor="reportingManagerUser" className="block text-gray-700 text-sm font-bold mb-2">
+            Reporting Manager
+          </label> {/* SHORTENED LABEL */}
+          <select
+            id="reportingManagerUser"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-200" // Smaller padding, lighter ring
+            value={reportingManager}
+            onChange={(e) => setReportingManager(e.target.value)}
+            disabled={isLoading || adminUsers.length === 0}
+          >
+            <option value="">None</option>
+            {adminUsers.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.username}
+              </option>
+            ))}
+          </select>
+          {adminUsers.length === 0 && <p className="text-sm text-gray-500 mt-1">No admin users available to be reporting managers.</p>}
+        </div>
+        {/* END NEW FIELD */}
         <button
           type="submit"
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
+          className="bg-indigo-300 hover:bg-indigo-400 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out transform hover:scale-105 text-sm" // Lighter, smaller, less shadow
           disabled={isLoading || !selectedProject || !newTaskName.trim()}
         >
           {isLoading ? 'Creating...' : 'Create My Task'}
@@ -3290,9 +2046,25 @@ function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // 
       ) : userTasks.length === 0 ? (
         <p className="text-gray-500">No tasks assigned to you yet. Create one above or ask your admin to assign one!</p>
       ) : (
-        <ul className="space-y-4">
-          {/* Render only top-level tasks initially, and let recursion handle subtasks */}
-          {renderUserTasks(userTasks.filter(task => task.parent_task === null))}
+        <ul className="space-y-3"> {/* Slightly reduced spacing */}
+          {userTasks.map(task => (
+            <li
+              key={task.id}
+              className={`bg-indigo-100 p-3 rounded-lg shadow-sm border border-indigo-200 flex flex-col sm:flex-row justify-between items-start sm:items-center cursor-pointer hover:bg-indigo-200`} // Smaller padding
+              onClick={() => viewTaskDetails(task.id)} // Make task clickable
+            >
+              <div className="mb-1 sm:mb-0"> {/* Smaller margin */}
+                <p className="font-semibold text-sm text-indigo-800"> {/* Made task name smaller */}
+                  {task.name} (Project: {task.project_name})
+                </p>
+                {/* Removed task.description display from list item */}
+                <p className="text-gray-600 text-xs">Due Date: {task.due_date || 'N/A'}</p> {/* Smaller font */}
+                <p className="text-gray-600 text-xs">Reporting Manager: {getUserName(task.reporting_manager)}</p> {/* Smaller font */}
+                <p className="text-gray-600 text-xs">Status: <span className={`font-semibold ${task.status === 'completed' ? 'text-green-600' : task.status === 'in_progress' ? 'text-blue-600' : 'text-yellow-600'}`}>{task.status}</span></p> {/* Smaller font */}
+                <p className="text-gray-600 text-xs">Progress: {task.progress}%</p> {/* Smaller font */}
+              </div>
+            </li>
+          ))}
         </ul>
       )}
     </div>
@@ -3300,99 +2072,341 @@ function UserTaskManagement({ userId, openConfirmModal, viewTaskDetails }) { // 
 }
 
 
-// --- DASHBOARD COMPONENTS (DEFINED AFTER THEIR CHILDREN) ---
+// NEW COMPONENT: UserHourlyTimeEntry (for User Dashboard)
+function UserHourlyTimeEntry({ userId, openConfirmModal }) {
+  const [tasks, setTasks] = useState([]); // Tasks assigned to this user
+  const [timeEntries, setTimeEntries] = useState([]); // User's own time entries
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-// User Dashboard Component
-function UserDashboard({ userId, openConfirmModal, viewTaskDetails }) { // Added viewTaskDetails prop
-  const [activeTab, setActiveTab] = useState('timesheets');
+  // Form states
+  const [selectedTask, setSelectedTask] = useState('');
+  const [logDate, setLogDate] = useState(formatDate(new Date())); // Default to today
+  const [startTime, setStartTime] = useState('09:00'); // New state for start time
+  const [endTime, setEndTime] = useState('17:00');   // New state for end time
+  const [description, setDescription] = useState('');
+
+  const fetchUserTimeEntriesAndTasks = useCallback(async () => {
+    setIsLoading(true);
+    setMessage('');
+    try {
+      const [tasksResponse, timeEntriesResponse] = await Promise.all([
+        authenticatedFetch(`${API_BASE_URL}/tasks/?assigned_to=${userId}`, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/task-time-entries/?user_id=${userId}`, { method: 'GET' }),
+      ]);
+
+      if (tasksResponse.ok) {
+        const tasksData = await tasksResponse.json();
+        setTasks(tasksData);
+        // Set default selected task if available and no task is already selected
+        if (tasksData.length > 0 && !selectedTask) {
+          setSelectedTask(tasksData[0].id);
+        }
+      } else {
+        setMessage(`Failed to fetch tasks: ${tasksResponse.statusText}`);
+      }
+
+      if (timeEntriesResponse.ok) {
+        setTimeEntries(await timeEntriesResponse.json());
+      } else {
+        setMessage(`Failed to fetch time entries: ${timeEntriesResponse.statusText}`);
+      }
+    } catch (error) {
+      console.error('Error fetching user hourly data:', error);
+      setMessage('Network error while fetching hourly data.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  }, [userId, selectedTask, authenticatedFetch]); // Added authenticatedFetch to dependencies
+
+  useEffect(() => {
+    if (userId) {
+      fetchUserTimeEntriesAndTasks();
+    }
+  }, [userId, fetchUserTimeEntriesAndTasks]);
+
+  const handleTimeEntrySubmit = async (e) => {
+    e.preventDefault();
+    setMessage('');
+
+    if (!selectedTask || !logDate || !startTime || !endTime || !description.trim()) {
+      setMessage('Please fill all required fields.');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+
+    // Validate that end time is after start time for the same day
+    const startDateTime = moment(`${logDate} ${startTime}`);
+    const endDateTime = moment(`${logDate} ${endTime}`);
+
+    if (endDateTime.isSameOrBefore(startDateTime)) {
+        setMessage('End time must be after start time.');
+        setTimeout(() => setMessage(''), 5000);
+        return;
+    }
+
+    // Calculate duration in hours for frontend validation
+    const duration = moment.duration(endDateTime.diff(startDateTime));
+    const hours = duration.asHours();
+
+    if (hours > 12) {
+        setMessage('Logged time cannot exceed 12 hours.');
+        setTimeout(() => setMessage(''), 5000);
+        return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await authenticatedFetch(`${API_BASE_URL}/task-time-entries/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          task: selectedTask,
+          start_time: startDateTime.toISOString(), // Use ISO string for backend
+          end_time: endDateTime.toISOString(),     // Use ISO string for backend
+          description: description,
+          user: userId, // Ensure user is explicitly sent, though backend sets it
+        }),
+      });
+
+      if (response.ok) {
+        setMessage('Hourly time entry added successfully!');
+        // Clear form, but keep selectedTask and logDate for convenience
+        setStartTime('09:00'); // Reset to default for next entry
+        setEndTime('17:00');   // Reset to default for next entry
+        setDescription('');
+        fetchUserTimeEntriesAndTasks(); // Re-fetch to update the list
+      } else {
+        const errorData = await response.json();
+        setMessage(`Failed to add time entry: ${errorData.detail || JSON.stringify(errorData) || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error adding time entry:', error);
+      setMessage('Network error while adding time entry.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
+  const handleDeleteTimeEntry = (entryId) => {
+    openConfirmModal('Are you sure you want to delete this hourly time entry? This action cannot be undone.', async () => {
+      setIsLoading(true);
+      setMessage('');
+      try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/task-time-entries/${entryId}/`, {
+          method: 'DELETE',
+        });
+
+        if (response.ok) {
+          setMessage('Time entry deleted successfully!');
+          fetchUserTimeEntriesAndTasks(); // Re-fetch
+        } else {
+          const errorData = await response.json();
+          setMessage(`Failed to delete entry: ${errorData.detail || 'Unknown error'}`);
+        }
+      } catch (error) {
+        console.error('Error deleting time entry:', error);
+        setMessage('Network error while deleting time entry.');
+      } finally {
+        setIsLoading(false);
+        setTimeout(() => setMessage(''), 5000);
+      }
+    });
+  };
 
   return (
-    <div className="p-6">
-      <h2 className="text-3xl font-semibold text-gray-700 mb-6">User Dashboard</h2>
-      <div className="flex border-b border-gray-200 mb-6">
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'timesheets'
-              ? 'bg-yellow-200 text-yellow-800 border-b-4 border-yellow-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('timesheets')}
-        >
-          Timesheets
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'leave'
-              ? 'bg-pink-200 text-pink-800 border-b-4 border-pink-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('leave')}
-        >
-          Leave Requests
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'my-tasks' // NEW TAB
-              ? 'bg-indigo-200 text-indigo-800 border-b-4 border-indigo-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('my-tasks')}
-        >
-          My Tasks
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'calendar'
-              ? 'bg-orange-200 text-orange-800 border-b-4 border-orange-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('calendar')}
-        >
-          Calendar View
-        </button>
-      </div>
+    <div className="p-4 bg-white rounded-lg shadow-inner">
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Log Hourly Time</h3>
+      <p className="text-gray-600 mb-4">
+        Log your time in hours against specific tasks. You can log a maximum of 12 hours per entry.
+      </p>
+      {message && (
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-purple-100 border border-purple-400 text-purple-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+          <span className="block sm:inline">{message}</span>
+        </div>
+      )}
 
-      {activeTab === 'timesheets' ? (
-        <TimesheetEntry userId={userId} openConfirmModal={openConfirmModal} />
-      ) : activeTab === 'leave' ? (
-        <LeaveRequest userId={userId} openConfirmModal={openConfirmModal} />
-      ) : activeTab === 'my-tasks' ? ( // RENDER NEW COMPONENT
-        <UserTaskManagement userId={userId} openConfirmModal={openConfirmModal} viewTaskDetails={viewTaskDetails} />
+      <form onSubmit={handleTimeEntrySubmit} className="mb-6 bg-purple-50 p-6 rounded-lg shadow-sm border border-purple-100">
+        <h4 className="text-xl font-medium text-gray-700 mb-4">New Hourly Entry</h4>
+        <div className="mb-4">
+          <label htmlFor="selectTaskHourly" className="block text-gray-700 text-sm font-bold mb-2">
+            Select Task
+          </label>
+          <select
+            id="selectTaskHourly"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200" // Smaller padding, lighter ring
+            value={selectedTask}
+            onChange={(e) => setSelectedTask(e.target.value)}
+            required
+            disabled={isLoading || tasks.length === 0}
+          >
+            {tasks.length === 0 ? (
+              <option value="">No tasks assigned to you</option>
+            ) : (
+              tasks.map((task) => (
+                <option key={task.id} value={task.id}>
+                  {task.name} (Project: {task.project_name})
+                </option>
+              ))
+            )}
+          </select>
+          {tasks.length === 0 && <p className="text-sm text-gray-500 mt-1">You don't have any tasks assigned. Please create one in "My Tasks" or ask your admin to assign one.</p>}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4"> {/* Changed to 3 columns */}
+          <div>
+            <label htmlFor="logDate" className="block text-gray-700 text-sm font-bold mb-2">
+              Date
+            </label>
+            <input
+              type="date"
+              id="logDate"
+              className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200" // Smaller padding, lighter ring
+              value={logDate}
+              onChange={(e) => setLogDate(e.target.value)}
+              required
+              disabled={isLoading}
+            />
+          </div>
+          <div>
+            <label htmlFor="logStartTime" className="block text-gray-700 text-sm font-bold mb-2">
+                Start Time
+            </label>
+            <input
+                type="time"
+                id="logStartTime"
+                className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200" // Smaller padding, lighter ring
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                required
+                disabled={isLoading}
+            />
+          </div>
+          <div>
+            <label htmlFor="logEndTime" className="block text-gray-700 text-sm font-bold mb-2">
+                End Time
+            </label>
+            <input
+                type="time"
+                id="logEndTime"
+                className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200" // Smaller padding, lighter ring
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                required
+                disabled={isLoading}
+            />
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <label htmlFor="hourlyDescription" className="block text-gray-700 text-sm font-bold mb-2">
+            Description of Work
+          </label>
+          <textarea
+            id="hourlyDescription"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-purple-200" // Smaller padding, lighter ring
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="e.g., Coded login functionality, Reviewed PR, Attended meeting"
+            rows="3"
+            required
+            disabled={isLoading}
+          ></textarea>
+        </div>
+        <button
+          type="submit"
+          className="bg-purple-300 hover:bg-purple-400 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out transform hover:scale-105 text-sm" // Lighter, smaller, less shadow
+          disabled={isLoading || tasks.length === 0}
+        >
+          {isLoading ? 'Adding...' : 'Add Time Entry'}
+        </button>
+      </form>
+
+      <h4 className="text-xl font-medium text-gray-700 mb-3">Your Hourly Time Entries</h4>
+      {isLoading && timeEntries.length === 0 ? (
+        <p className="text-gray-500">Loading your time entries...</p>
+      ) : timeEntries.length === 0 ? (
+        <p className="text-gray-500">No hourly time entries logged yet. Log one above!</p>
       ) : (
-        <CalendarView userId={userId} userRole="user" viewTaskDetails={viewTaskDetails} />
+        <div className="overflow-x-auto relative shadow-md sm:rounded-lg">
+          <table className="w-full text-sm text-left text-gray-500 light-table-style">
+            <thead className="text-xs text-gray-700 uppercase bg-gray-200 light-table-header">
+              <tr>
+                <th scope="col" className="py-2 px-4">Task</th> {/* Smaller padding */}
+                <th scope="col" className="py-2 px-4">Date</th> {/* Smaller padding */}
+                <th scope="col" className="py-2 px-4">Start Time</th> {/* Smaller padding */}
+                <th scope="col" className="py-2 px-4">End Time</th> {/* Smaller padding */}
+                <th scope="col" className="py-2 px-4">Duration</th> {/* Smaller padding */}
+                <th scope="col" className="py-2 px-4">Description</th> {/* Smaller padding */}
+                <th scope="col" className="py-2 px-4">Actions</th> {/* Smaller padding */}
+              </tr>
+            </thead>
+            <tbody>
+              {timeEntries.sort((a, b) => moment(b.start_time).valueOf() - moment(a.start_time).valueOf()).map(entry => (
+                <tr key={entry.id} className="bg-white border-b hover:bg-gray-50 light-table-row">
+                  <td className="py-3 px-4">{entry.task_name}</td> {/* Smaller padding */}
+                  <td className="py-3 px-4">{moment(entry.start_time).format('YYYY-MM-DD')}</td> {/* Smaller padding */}
+                  <td className="py-3 px-4">{moment(entry.start_time).format('HH:mm')}</td> {/* Smaller padding */}
+                  <td className="py-3 px-4">{moment(entry.end_time).format('HH:mm')}</td> {/* Smaller padding */}
+                  <td className="py-3 px-4 font-bold">{formatHoursToMinutes(entry.duration_hours)}</td> {/* Smaller padding */}
+                  <td className="py-3 px-4">{entry.description}</td> {/* Smaller padding */}
+                  <td className="py-3 px-4"> {/* Smaller padding */}
+                    <button
+                      onClick={() => handleDeleteTimeEntry(entry.id)}
+                      className="px-2.5 py-1 bg-red-300 text-white rounded-lg hover:bg-red-400 transition duration-300 text-xs shadow-sm" // Lighter, smaller, less shadow
+                      disabled={isLoading}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
 }
 
-// NEW COMPONENT: HourlyUpdatesReport (for Admin Dashboard)
+
+// NEW COMPONENT: HourlyUpdatesReport (for Admin Dashboard) - Now only shows current day
 function HourlyUpdatesReport({ userId }) {
   const [timeEntries, setTimeEntries] = useState([]);
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState([]); // All users
+  const [nonAdminUsers, setNonAdminUsers] = useState([]); // Only non-admin users for filter
   const [tasks, setTasks] = useState([]);
   const [projects, setProjects] = useState([]);
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Default date filter to TODAY's date, not changeable by user in this view
+  const fixedDateFilter = formatDate(new Date());
+
+  // Filter states for user, project, task (these are kept)
   const [selectedUserFilter, setSelectedUserFilter] = useState('');
   const [selectedProjectFilter, setSelectedProjectFilter] = useState('');
-  const [selectedTaskFilter, setSelectedTaskFilter] = useState(''); // Correctly declared here
-  const [startDateFilter, setStartDateFilter] = useState('');
-  const [endDateFilter, setEndDateFilter] = useState('');
+  const [selectedTaskFilter, setSelectedTaskFilter] = useState('');
+
 
   const fetchHourlyUpdates = useCallback(async () => {
     setIsLoading(true);
     setMessage('');
 
     try {
-      // Fetch all time entries (admin can see all)
       let url = `${API_BASE_URL}/task-time-entries/`;
       const queryParams = [];
-      if (selectedUserFilter) queryParams.push(`user_id=${selectedUserFilter}`);
-      if (selectedProjectFilter) queryParams.push(`project_id=${selectedProjectFilter}`); // Assuming backend can filter by project
-      if (selectedTaskFilter) queryParams.push(`task_id=${selectedTaskFilter}`);
-      if (startDateFilter) queryParams.push(`start_date_gte=${startDateFilter}`); // Assuming backend can filter by date range
-      if (endDateFilter) queryParams.push(`end_date_lte=${endDateFilter}`);
 
+      // Always apply the fixed date filter for today
+      queryParams.push(`start_time__gte=${fixedDateFilter}T00:00:00`);
+      queryParams.push(`end_time__lte=${fixedDateFilter}T23:59:59`);
+
+      // Apply other filters if selected
+      if (selectedUserFilter) queryParams.push(`user_id=${selectedUserFilter}`);
+      if (selectedProjectFilter) queryParams.push(`project_id=${selectedProjectFilter}`);
+      if (selectedTaskFilter) queryParams.push(`task_id=${selectedTaskFilter}`);
+      
       if (queryParams.length > 0) {
         url += `?${queryParams.join('&')}`;
       }
@@ -3410,7 +2424,9 @@ function HourlyUpdatesReport({ userId }) {
         setMessage(`Failed to fetch hourly updates: ${timeEntriesResponse.statusText}`);
       }
       if (usersResponse.ok) {
-        setUsers(await usersResponse.json());
+        const fetchedUsers = await usersResponse.json();
+        setUsers(fetchedUsers);
+        setNonAdminUsers(fetchedUsers.filter(user => !user.is_staff));
       } else {
         setMessage(`Failed to fetch users: ${usersResponse.statusText}`);
       }
@@ -3432,22 +2448,22 @@ function HourlyUpdatesReport({ userId }) {
       setIsLoading(false);
       setTimeout(() => setMessage(''), 5000);
     }
-  }, [selectedUserFilter, selectedProjectFilter, selectedTaskFilter, startDateFilter, endDateFilter]);
+  }, [fixedDateFilter, selectedUserFilter, selectedProjectFilter, selectedTaskFilter, authenticatedFetch]);
 
 
   useEffect(() => {
-    fetchHourlyUpdates();
-  }, [fetchHourlyUpdates]); // Re-fetch when filters change
-
+    if (userId) {
+        fetchHourlyUpdates();
+    }
+  }, [userId, fetchHourlyUpdates]);
 
   const getTaskName = (taskId) => tasks.find(t => t.id === taskId)?.name || `Task ${taskId}`;
   const getUserName = (userId) => users.find(u => u.id === userId)?.username || `User ${userId}`;
   const getProjectName = (projectId) => projects.find(p => p.id === projectId)?.name || `Project ${projectId}`;
 
-  // Correctly defined filteredTasksForDropdown within this component's scope
   const filteredTasksForDropdown = useCallback(() => {
     if (!selectedProjectFilter) {
-      return tasks; // Show all tasks if no project filter
+      return tasks;
     }
     return tasks.filter(task => task.project === parseInt(selectedProjectFilter));
   }, [tasks, selectedProjectFilter]);
@@ -3468,7 +2484,6 @@ function HourlyUpdatesReport({ userId }) {
     return acc;
   }, {});
 
-  // Sort users by username for consistent display
   const sortedUsers = Object.values(groupedTimeEntries).sort((a, b) =>
     a.user_username.localeCompare(b.user_username)
   );
@@ -3476,27 +2491,29 @@ function HourlyUpdatesReport({ userId }) {
 
   return (
     <div className="p-4 bg-white rounded-lg shadow-inner">
-      <h3 className="text-2xl font-medium text-gray-700 mb-4">Hourly Time Updates</h3>
-      <p className="text-gray-600 mb-4">View and filter all hourly time entries logged by users.</p>
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Daily Hourly Updates (Admin View)</h3>
+      <p className="text-gray-600 mb-4">
+        Viewing hourly time entries logged by users for today: <span className="font-bold">{moment(fixedDateFilter).format('MMM DD, YYYY')}</span>
+      </p>
       {message && (
-        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successfully') ? 'bg-green-100 border border-green-400 text-green-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-green-100 border border-green-400 text-green-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
           <span className="block sm:inline">{message}</span>
         </div>
       )}
 
-      {/* Filter Section */}
-      <div className="mb-6 bg-gray-50 p-6 rounded-lg shadow-sm border border-gray-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Filter Section - Restored and updated */}
+      <div className="mb-6 bg-teal-50 p-6 rounded-lg shadow-xl border border-teal-100 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div>
           <label htmlFor="userFilter" className="block text-gray-700 text-sm font-bold mb-2">Filter by User:</label>
           <select
             id="userFilter"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-teal-200 bg-white text-gray-800" // Smaller padding, lighter ring
             value={selectedUserFilter}
             onChange={(e) => setSelectedUserFilter(e.target.value)}
             disabled={isLoading}
           >
             <option value="">All Users</option>
-            {users.map(user => (
+            {nonAdminUsers.map(user => ( // Filtered to show only non-admin users
               <option key={user.id} value={user.id}>{user.username}</option>
             ))}
           </select>
@@ -3505,7 +2522,7 @@ function HourlyUpdatesReport({ userId }) {
           <label htmlFor="projectFilter" className="block text-gray-700 text-sm font-bold mb-2">Filter by Project:</label>
           <select
             id="projectFilter"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-teal-200 bg-white text-gray-800" // Smaller padding, lighter ring
             value={selectedProjectFilter}
             onChange={(e) => {
                 setSelectedProjectFilter(e.target.value);
@@ -3523,7 +2540,7 @@ function HourlyUpdatesReport({ userId }) {
           <label htmlFor="taskFilter" className="block text-gray-700 text-sm font-bold mb-2">Filter by Task:</label>
           <select
             id="taskFilter"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-teal-200 bg-white text-gray-800" // Smaller padding, lighter ring
             value={selectedTaskFilter}
             onChange={(e) => setSelectedTaskFilter(e.target.value)}
             disabled={isLoading || filteredTasksForDropdown().length === 0}
@@ -3534,38 +2551,16 @@ function HourlyUpdatesReport({ userId }) {
             ))}
           </select>
         </div>
-        <div>
-          <label htmlFor="startDateFilter" className="block text-gray-700 text-sm font-bold mb-2">Start Date:</label>
-          <input
-            type="date"
-            id="startDateFilter"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
-            value={startDateFilter}
-            onChange={(e) => setStartDateFilter(e.target.value)}
-            disabled={isLoading}
-          />
-        </div>
-        <div>
-          <label htmlFor="endDateFilter" className="block text-gray-700 text-sm font-bold mb-2">End Date:</label>
-          <input
-            type="date"
-            id="endDateFilter"
-            className="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-200"
-            value={endDateFilter}
-            onChange={(e) => setEndDateFilter(e.target.value)}
-            disabled={isLoading}
-          />
-        </div>
+        {/* The date input is intentionally removed as per your request to only show current day */}
         <div className="md:col-span-2 lg:col-span-1 flex items-end justify-end">
           <button
             onClick={() => {
               setSelectedUserFilter('');
               setSelectedProjectFilter('');
               setSelectedTaskFilter('');
-              setStartDateFilter('');
-              setEndDateFilter('');
+              // fixedDateFilter remains unchanged
             }}
-            className="px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition duration-300 shadow-md w-full"
+            className="px-4 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition duration-300 shadow-sm w-full text-sm" // Lighter, smaller, less shadow
             disabled={isLoading}
           >
             Clear Filters
@@ -3574,52 +2569,771 @@ function HourlyUpdatesReport({ userId }) {
       </div>
 
       {isLoading && timeEntries.length === 0 ? (
-        <p className="text-gray-500 text-center py-8">Loading hourly updates...</p>
+        <p className="text-gray-500 text-center py-8">Loading today's hourly updates...</p>
       ) : sortedUsers.length === 0 ? (
-        <p className="text-gray-500 text-center py-8">No hourly time entries found for the selected filters.</p>
+        <p className="text-gray-500 text-center py-8">No hourly time entries found for today ({moment(fixedDateFilter).format('MMM DD, YYYY')}).</p>
       ) : (
-        <div className="overflow-x-auto relative shadow-md sm:rounded-lg">
-          <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-            <thead className="text-xs text-gray-700 uppercase bg-gray-200 dark:bg-gray-700 dark:text-gray-400">
-              <tr>
-                <th scope="col" className="py-3 px-6">User</th>
-                <th scope="col" className="py-3 px-6">Project</th>
-                <th scope="col" className="py-3 px-6">Task</th>
-                <th scope="col" className="py-3 px-6">Date</th>
-                <th scope="col" className="py-3 px-6">Start Time</th>
-                <th scope="col" className="py-3 px-6">End Time</th>
-                <th scope="col" className="py-3 px-6">Duration (Hours)</th>
-                <th scope="col" className="py-3 px-6">Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedUsers.map(userGroup => (
-                <React.Fragment key={userGroup.user_id}>
-                  {/* User Header Row */}
-                  <tr className="bg-blue-100 border-b border-blue-200">
-                    <td colSpan="8" className="py-3 px-6 font-bold text-lg text-blue-800">
-                      {userGroup.user_username} (Total: {userGroup.total_hours.toFixed(2)} hours)
-                    </td>
-                  </tr>
-                  {/* Individual Time Entries for this User */}
-                  {userGroup.entries.sort((a, b) => moment(b.start_time).valueOf() - moment(a.start_time).valueOf()).map(entry => (
-                    <tr key={entry.id} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
-                      {/* Empty cell for User column in detail rows */}
-                      <td className="py-4 px-6"></td>
-                      <td className="py-4 px-6">{getProjectName(tasks.find(t => t.id === entry.task)?.project)}</td>
-                      <td className="py-4 px-6">{getTaskName(entry.task)}</td>
-                      <td className="py-4 px-6">{moment(entry.start_time).format('YYYY-MM-DD')}</td>
-                      <td className="py-4 px-6">{moment(entry.start_time).format('HH:mm')}</td>
-                      <td className="py-4 px-6">{moment(entry.end_time).format('HH:mm')}</td>
-                      <td className="py-4 px-6 font-bold">{entry.duration_hours.toFixed(2)}</td>
-                      <td className="py-4 px-6">{entry.description}</td>
+        <div className="space-y-8"> {/* Container for separate tables */}
+          {sortedUsers.map(userGroup => (
+            <div key={userGroup.user_id} className="bg-gradient-to-br from-teal-50 to-amber-50 rounded-xl shadow-2xl border border-teal-200 p-6 transform hover:scale-[1.01] transition duration-300 ease-in-out">
+              <h4 className="text-2xl font-extrabold text-amber-800 mb-4 flex items-center">
+                <svg className="w-7 h-7 mr-3 text-teal-600" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"></path></svg>
+                {userGroup.user_username}
+                <span className="ml-auto px-3 py-1 bg-amber-500 text-white text-xs font-semibold rounded-full shadow-sm"> {/* Smaller padding, smaller font, less shadow */}
+                  Total Logged: {formatHoursToMinutes(userGroup.total_hours)}
+                </span>
+              </h4>
+              <div className="overflow-x-auto rounded-lg border border-amber-300">
+                <table className="w-full text-sm text-left text-gray-700">
+                  <thead className="text-xs text-amber-700 uppercase bg-amber-200">
+                    <tr>
+                      <th scope="col" className="py-2 px-4">Project</th> {/* Smaller padding */}
+                      <th scope="col" className="py-2 px-4">Task</th> {/* Smaller padding */}
+                      <th scope="col" className="py-2 px-4">Start Time</th> {/* Smaller padding */}
+                      <th scope="col" className="py-2 px-4">End Time</th> {/* Smaller padding */}
+                      <th scope="col" className="py-2 px-4">Duration</th> {/* Smaller padding */}
+                      <th scope="col" className="py-2 px-4">Description</th> {/* Smaller padding */}
                     </tr>
-                  ))}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
+                  </thead>
+                  <tbody>
+                    {userGroup.entries.sort((a, b) => moment(b.start_time).valueOf() - moment(a.start_time).valueOf()).map(entry => (
+                      <tr key={entry.id} className="bg-white border-b border-amber-100 hover:bg-amber-50 transition duration-150">
+                        <td className="py-3 px-4 font-medium text-amber-800">{getProjectName(tasks.find(t => t.id === entry.task)?.project)}</td> {/* Smaller padding */}
+                        <td className="py-3 px-4">{getTaskName(entry.task)}</td> {/* Smaller padding */}
+                        {/* Removed date column as it's implied by the "Today" view */}
+                        <td className="py-3 px-4">{moment(entry.start_time).format('HH:mm')}</td> {/* Smaller padding */}
+                        <td className="py-3 px-4">{moment(entry.end_time).format('HH:mm')}</td> {/* Smaller padding */}
+                        <td className="py-3 px-4 font-bold text-teal-600">{formatHoursToMinutes(entry.duration_hours)}</td> {/* Smaller padding */}
+                        <td className="py-3 px-4 text-gray-600">{entry.description}</td> {/* Smaller padding */}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// NEW COMPONENT: WorkdayTimesheetView (for Admin Dashboard)
+function WorkdayTimesheetView({ userId }) {
+  const [selectedDate, setSelectedDate] = useState(formatDate(new Date())); // Default to today
+  const [timeEntries, setTimeEntries] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchTimesheetsForDate = useCallback(async (dateToFetch) => {
+    setIsLoading(true);
+    setMessage('');
+    try {
+      // Construct URL to filter strictly by the selected date
+      const url = `${API_BASE_URL}/task-time-entries/?start_time__gte=${dateToFetch}T00:00:00&end_time__lte=${dateToFetch}T23:59:59`;
+      console.log(`[WorkdayTimesheetView] Fetching URL: ${url}`); // Debugging: Log the URL
+
+      const [timeEntriesResponse, usersResponse, tasksResponse, projectsResponse] = await Promise.all([
+        authenticatedFetch(url, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/users/`, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/tasks/`, { method: 'GET' }),
+        authenticatedFetch(`${API_BASE_URL}/projects/`, { method: 'GET' }),
+      ]);
+
+      if (timeEntriesResponse.ok) {
+        const data = await timeEntriesResponse.json();
+        console.log(`[WorkdayTimesheetView] Fetched time entries for ${dateToFetch}:`, data); // Debugging: Log fetched data
+        setTimeEntries(data);
+      } else {
+        setMessage(`Failed to fetch time entries: ${timeEntriesResponse.statusText}`);
+      }
+      if (usersResponse.ok) {
+        setUsers(await usersResponse.json());
+      } else {
+        setMessage(`Failed to fetch users: ${usersResponse.statusText}`);
+      }
+      if (tasksResponse.ok) {
+        setTasks(await tasksResponse.json());
+      } else {
+        setMessage(`Failed to fetch tasks: ${tasksResponse.statusText}`);
+      }
+      if (projectsResponse.ok) {
+        setProjects(await projectsResponse.json());
+      } else {
+        setMessage(`Failed to fetch projects: ${projectsResponse.statusText}`);
+      }
+
+    } catch (error) {
+      console.error('Error fetching timesheets for date:', error);
+      setMessage('Network error while fetching timesheets.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  }, [authenticatedFetch]); // Added authenticatedFetch to dependencies
+
+  useEffect(() => {
+    if (userId && selectedDate) {
+      fetchTimesheetsForDate(selectedDate);
+    }
+  }, [userId, selectedDate, fetchTimesheetsForDate]);
+
+  const getTaskName = (taskId) => tasks.find(t => t.id === taskId)?.name || `Task ${taskId}`;
+  const getUserName = (userId) => users.find(u => u.id === userId)?.username || `User ${userId}`;
+  const getProjectName = (projectId) => projects.find(p => p.id === projectId)?.name || `Project ${projectId}`;
+
+  const workdays = getWeekDates(new Date(), false); // Get Mon-Sat for current week
+
+  // Group time entries by user
+  const groupedTimeEntries = timeEntries.reduce((acc, entry) => {
+    const userId = entry.user;
+    if (!acc[userId]) {
+      acc[userId] = {
+        user_id: userId,
+        user_username: getUserName(userId),
+        entries: [],
+        total_hours: 0,
+      };
+    }
+    acc[userId].entries.push(entry);
+    acc[userId].total_hours += entry.duration_hours;
+    return acc;
+  }, {});
+
+  const sortedUsers = Object.values(groupedTimeEntries).sort((a, b) =>
+    a.user_username.localeCompare(b.user_username)
+  );
+
+  return (
+    <div className="p-4 bg-white rounded-lg shadow-inner">
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Workday Timesheets (Admin View)</h3>
+      <p className="text-gray-600 mb-4">Select a workday to view all users' hourly timesheets for that day.</p>
+      {message && (
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-blue-100 border border-blue-400 text-blue-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+          <span className="block sm:inline">{message}</span>
+        </div>
+      )}
+
+      <div className="mb-6 bg-blue-50 p-6 rounded-lg shadow-sm border border-blue-100">
+        <h4 className="text-xl font-medium text-gray-700 mb-3">Select Workday:</h4>
+        <div className="flex flex-wrap gap-3">
+          {workdays.map((day) => (
+            <button
+              key={formatDate(day)}
+              onClick={() => setSelectedDate(formatDate(day))}
+              className={`px-4 py-2 rounded-lg font-semibold transition duration-300 shadow-sm text-sm ${ // Smaller, less shadow
+                formatDate(day) === selectedDate
+                  ? 'bg-blue-400 text-white transform scale-105' // Slightly lighter active
+                  : 'bg-blue-200 text-blue-800 hover:bg-blue-300' // Lighter, lighter hover
+              }`}
+              disabled={isLoading}
+            >
+              {getDayName(day)}, {moment(day).format('MMM DD')}
+            </button>
+          ))}
+        </div>
+        {/* REMOVED THE LINE THAT WAS CAUSING CONFUSION */}
+        {/* <p className="mt-4 text-gray-600 text-sm">Viewing timesheets for: <span className="font-bold">{moment(selectedDate).format('dddd, MMMM DD, YYYY')}</span></p> */}
+      </div>
+
+      {isLoading && timeEntries.length === 0 ? (
+        <p className="text-gray-500 text-center py-8">Loading timesheets for {moment(selectedDate).format('MMM DD, YYYY')}...</p>
+      ) : sortedUsers.length === 0 ? (
+        <p className="text-gray-500 text-center py-8">No hourly time entries found for {moment(selectedDate).format('MMM DD, YYYY')}.</p>
+      ) : (
+        <div className="space-y-8">
+          {sortedUsers.map(userGroup => (
+            <div key={userGroup.user_id} className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-2xl border border-blue-200 p-6 transform hover:scale-[1.01] transition duration-300 ease-in-out">
+              <h4 className="text-2xl font-extrabold text-indigo-800 mb-4 flex items-center">
+                <svg className="w-7 h-7 mr-3 text-blue-600" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"></path></svg>
+                {userGroup.user_username}
+                <span className="ml-auto px-3 py-1 bg-indigo-500 text-white text-xs font-semibold rounded-full shadow-sm"> {/* Smaller padding, smaller font, less shadow */}
+                  Total Logged: {formatHoursToMinutes(userGroup.total_hours)}
+                </span>
+              </h4>
+              <div className="overflow-x-auto rounded-lg border border-indigo-300">
+                <table className="w-full text-sm text-left text-gray-700">
+                  <thead className="text-xs text-indigo-700 uppercase bg-indigo-200">
+                    <tr>
+                      <th scope="col" className="py-2 px-4">Project</th> {/* Smaller padding */}
+                      <th scope="col" className="py-2 px-4">Task</th> {/* Smaller padding */}
+                      <th scope="col" className="py-2 px-4">Date</th> {/* Added Date column, smaller padding */}
+                      <th scope="col" className="py-2 px-4">Start Time</th> {/* Smaller padding */}
+                      <th scope="col" className="py-2 px-4">End Time</th> {/* Smaller padding */}
+                      <th scope="col" className="py-2 px-4">Duration</th> {/* Smaller padding */}
+                      <th scope="col" className="py-2 px-4">Description</th> {/* Smaller padding */}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {userGroup.entries.sort((a, b) => moment(a.start_time).valueOf() - moment(b.start_time).valueOf()).map(entry => (
+                      <tr key={entry.id} className="bg-white border-b border-indigo-100 hover:bg-indigo-50 transition duration-150">
+                        <td className="py-3 px-4 font-medium text-indigo-800">{getProjectName(tasks.find(t => t.id === entry.task)?.project)}</td> {/* Smaller padding */}
+                        <td className="py-3 px-4">{getTaskName(entry.task)}</td> {/* Smaller padding */}
+                        <td className="py-3 px-4">{moment(entry.start_time).format('YYYY-MM-DD')}</td> {/* Display Date, smaller padding */}
+                        <td className="py-3 px-4">{moment(entry.start_time).format('HH:mm')}</td> {/* Smaller padding */}
+                        <td className="py-3 px-4">{moment(entry.end_time).format('HH:mm')}</td> {/* Smaller padding */}
+                        <td className="py-3 px-4 font-bold text-blue-600">{formatHoursToMinutes(entry.duration_hours)}</td> {/* Smaller padding */}
+                        <td className="py-3 px-4 text-gray-600">{entry.description}</td> {/* Smaller padding */}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// CalendarView Component - Reverted to previous state with task/leave highlighting
+function CalendarView({ userId, userRole, viewTaskDetails }) {
+  const [date, setDate] = useState(new Date());
+  const [tasks, setTasks] = useState([]);
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchCalendarData = useCallback(async () => {
+    setIsLoading(true);
+    setMessage('');
+    try {
+      let tasksUrl = `${API_BASE_URL}/tasks/`;
+      let leaveUrl = `${API_BASE_URL}/leave-requests/`;
+
+      // If user role is 'user', filter tasks and leave requests by their ID
+      if (userRole === 'user') {
+        tasksUrl += `?assigned_to=${userId}`;
+        leaveUrl += `?user=${userId}`;
+      }
+
+      const [tasksResponse, leaveResponse] = await Promise.all([
+        authenticatedFetch(tasksUrl, { method: 'GET' }),
+        authenticatedFetch(leaveUrl, { method: 'GET' }),
+      ]);
+
+      if (tasksResponse.ok) {
+        setTasks(await tasksResponse.json());
+      } else {
+        setMessage(`Failed to fetch tasks for calendar: ${tasksResponse.statusText}`);
+      }
+
+      if (leaveResponse.ok) {
+        setLeaveRequests(await leaveResponse.json());
+      } else {
+        setMessage(`Failed to fetch leave requests for calendar: ${leaveResponse.statusText}`);
+      }
+
+    } catch (error) {
+      console.error('Error fetching calendar data:', error);
+      setMessage('Network error while fetching calendar data.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  }, [userId, userRole, authenticatedFetch]); // Added authenticatedFetch to dependencies
+
+  useEffect(() => {
+    if (userId) {
+      fetchCalendarData();
+    }
+  }, [userId, fetchCalendarData]);
+
+  // Function to mark dates with events
+  const tileClassName = ({ date: calendarDate, view }) => {
+    if (view === 'month') {
+      const formattedCalendarDate = moment(calendarDate).format('YYYY-MM-DD');
+
+      const hasTask = tasks.some(task =>
+        task.due_date === formattedCalendarDate
+      );
+
+      const hasLeave = leaveRequests.some(request =>
+        moment(formattedCalendarDate).isBetween(request.start_date, request.end_date, 'day', '[]') ||
+        (request.is_hourly && request.start_date === formattedCalendarDate)
+      );
+
+      let classes = [];
+      if (hasTask) {
+        classes.push('has-task');
+      }
+      if (hasLeave) {
+        classes.push('has-leave');
+      }
+      return classes.join(' ');
+    }
+    return null;
+  };
+
+  // Function to display details for selected date
+  const renderDateContents = (selectedDate) => {
+    const formattedSelectedDate = moment(selectedDate).format('YYYY-MM-DD');
+
+    const tasksForDate = tasks.filter(task =>
+      task.due_date === formattedSelectedDate
+    );
+
+    const leaveForDate = leaveRequests.filter(request =>
+      moment(formattedSelectedDate).isBetween(request.start_date, request.end_date, 'day', '[]') ||
+      (request.is_hourly && request.start_date === formattedSelectedDate) // Corrected: use formattedSelectedDate
+    );
+
+    return (
+      <div className="mt-6">
+        <h4 className="text-xl font-semibold text-gray-700 mb-3">Events on {moment(selectedDate).format('ddd MMM DD YYYY')}</h4> {/* Changed format to match screenshot */}
+        {isLoading ? (
+          <p className="text-gray-500">Loading events...</p>
+        ) : (
+          <>
+            {tasksForDate.length > 0 && (
+              <div className="mb-4">
+                <h5 className="font-medium text-blue-700 mb-2">Tasks Due:</h5>
+                <ul className="list-disc list-inside space-y-1">
+                  {tasksForDate.map(task => (
+                    <li key={task.id} className="text-gray-800 cursor-pointer hover:text-blue-500" onClick={() => viewTaskDetails(task.id)}>
+                      {task.name} (Project: {task.project_name})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {leaveForDate.length > 0 && (
+              <div className="mb-4">
+                <h5 className="font-medium text-pink-700 mb-2">Leave Requests:</h5>
+                <ul className="list-disc list-inside space-y-1">
+                  {leaveForDate.map(request => (
+                    <li key={request.id} className="text-gray-800">
+                      {request.user_username} - {request.leave_type} ({request.is_hourly ? `${request.start_time}-${request.end_time}` : `${request.start_date} to ${request.end_date}`}) - Status: {request.status}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {tasksForDate.length === 0 && leaveForDate.length === 0 && (
+              <p className="text-gray-500">No events on this date.</p>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-4 bg-white rounded-lg shadow-inner">
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Calendar View</h3>
+      {message && (
+        <div className={`px-4 py-3 rounded relative mb-4 bg-red-100 border border-red-400 text-red-700`} role="alert">
+          <span className="block sm:inline">{message}</span>
+        </div>
+      )}
+      <div className="flex flex-col md:flex-row gap-6">
+        <div className="md:w-1/2">
+          <Calendar
+            onChange={setDate}
+            value={date}
+            className="react-calendar-custom shadow-md rounded-lg p-4 bg-gray-50 border border-gray-200"
+            tileClassName={tileClassName}
+          />
+          <style>
+            {`
+              .react-calendar-custom {
+                width: 100%;
+                max-width: 100%;
+                background: white;
+                border: 1px solid #a0a096;
+                font-family: Arial, Helvetica, sans-serif;
+                line-height: 1.125em;
+                border-radius: 0.5rem;
+              }
+              .react-calendar__navigation button {
+                min-width: 44px;
+                background: none;
+                font-size: 1.2em;
+                margin-top: 8px;
+                border-radius: 0.25rem;
+              }
+              .react-calendar__navigation button:enabled:hover,
+              .react-calendar__navigation button:enabled:focus {
+                background-color: #e6e6e6;
+              }
+              .react-calendar__navigation button[disabled] {
+                background-color: #f0f0f0;
+              }
+              .react-calendar__month-view__weekdays {
+                text-align: center;
+                text-transform: uppercase;
+                font-weight: bold;
+                font-size: 0.75em;
+              }
+              .react-calendar__month-view__weekdays__weekday {
+                padding: 0.5em;
+              }
+              .react-calendar__month-view__days__day {
+                color: #333;
+              }
+              .react-calendar__tile {
+                max-width: 100%;
+                padding: 10px 6.6667px;
+                background: none;
+                text-align: center;
+                line-height: 14px;
+                border-radius: 0.25rem;
+              }
+              .react-calendar__tile:enabled:hover,
+              .react-calendar__tile:enabled:focus {
+                background-color: #e6e6e6;
+              }
+              .react-calendar__tile--now {
+                background: #e0e0e0;
+                border-radius: 0.25rem;
+              }
+              .react-calendar__tile--now:enabled:hover,
+              .react-calendar__tile--now:enabled:focus {
+                background: #c0c0c0;
+              }
+              .react-calendar__tile--active {
+                background: #006edc;
+                color: white;
+                border-radius: 0.25rem;
+              }
+              .react-calendar__tile--active:enabled:hover,
+              .react-calendar__tile--active:enabled:focus {
+                background: #004d99;
+              }
+              .has-task {
+                background-color: #a7f3d0; /* green-200 */
+                border-radius: 0.25rem;
+              }
+              .has-leave {
+                background-color: #fbcfe8; /* pink-200 */
+                border-radius: 0.25rem;
+              }
+              .has-task.has-leave {
+                background: linear-gradient(to bottom right, #a7f3d0 50%, #fbcfe8 50%);
+              }
+            `}
+          </style>
+        </div>
+        <div className="md:w-1/2 p-4 bg-gray-50 rounded-lg shadow-sm border border-gray-200">
+          {renderDateContents(date)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// NEW COMPONENT: NoticeManagement (Admin Dashboard)
+function NoticeManagement({ userId, openConfirmModal }) {
+  const [notices, setNotices] = useState([]);
+  const [newNoticeTitle, setNewNoticeTitle] = useState('');
+  const [newNoticeContent, setNewNoticeContent] = useState('');
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [editingNotice, setEditingNotice] = useState(null);
+
+  const fetchNotices = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await authenticatedFetch(`${API_BASE_URL}/notices/`, {
+        method: 'GET',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        // Sort notices by creation date, newest first
+        setNotices(data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      } else {
+        // If response is not OK, log the raw text for debugging
+        const errorText = await response.text();
+        console.error('Failed to fetch notices. Response status:', response.status, 'Response text:', errorText);
+        setMessage(`Failed to fetch notices: ${response.status} - ${errorText || 'Unknown error'}.`);
+      }
+    } catch (error) {
+      console.error('Error fetching notices:', error);
+      setMessage('Network error while fetching notices.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000); // Keep message longer for backend errors
+    }
+  }, [authenticatedFetch]);
+
+  useEffect(() => {
+    if (userId) {
+      fetchNotices();
+    }
+  }, [userId, fetchNotices]);
+
+  const handleAddNotice = async (e) => {
+    e.preventDefault();
+    if (!newNoticeTitle.trim() || !newNoticeContent.trim()) {
+      setMessage('Notice title and content cannot be empty.');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await authenticatedFetch(`${API_BASE_URL}/notices/`, {
+        method: 'POST',
+        body: JSON.stringify({ title: newNoticeTitle, content: newNoticeContent, created_by: userId }),
+      });
+
+      if (response.ok) {
+        setMessage('Notice added successfully!');
+        setNewNoticeTitle('');
+        setNewNoticeContent('');
+        fetchNotices();
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to add notice. Response status:', response.status, 'Response text:', errorText);
+        setMessage(`Failed to add notice: ${response.status} - ${errorText || 'Unknown error'}.`);
+      }
+    } catch (error) {
+      console.error('Error adding notice:', error);
+      setMessage('Network error while adding notice.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
+  const handleEditNotice = (notice) => {
+    setEditingNotice(notice);
+    setNewNoticeTitle(notice.title);
+    setNewNoticeContent(notice.content);
+  };
+
+  const handleUpdateNotice = async (e) => {
+    e.preventDefault();
+    if (!newNoticeTitle.trim() || !newNoticeContent.trim()) {
+      setMessage('Notice title and content cannot be empty.');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await authenticatedFetch(`${API_BASE_URL}/notices/${editingNotice.id}/`, {
+        method: 'PUT',
+        body: JSON.stringify({ title: newNoticeTitle, content: newNoticeContent, created_by: userId }),
+      });
+
+      if (response.ok) {
+        setMessage('Notice updated successfully!');
+        setEditingNotice(null);
+        setNewNoticeTitle('');
+        setNewNoticeContent('');
+        fetchNotices();
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to update notice. Response status:', response.status, 'Response text:', errorText);
+        setMessage(`Failed to update notice: ${response.status} - ${errorText || 'Unknown error'}.`);
+      }
+    } catch (error) {
+      console.error('Error updating notice:', error);
+      setMessage('Network error while updating notice.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000);
+    }
+  };
+
+  const handleDeleteNotice = (noticeId) => {
+    openConfirmModal('Are you sure you want to delete this notice? This action cannot be undone.', async () => {
+      setIsLoading(true);
+      try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/notices/${noticeId}/`, {
+          method: 'DELETE',
+        });
+
+        if (response.ok) {
+          setMessage('Notice deleted successfully!');
+          fetchNotices();
+        } else {
+          const errorText = await response.text();
+          console.error('Failed to delete notice. Response status:', response.status, 'Response text:', errorText);
+          setMessage(`Failed to delete notice: ${response.status} - ${errorText || 'Unknown error'}.`);
+        }
+      } catch (error) {
+        console.error('Error deleting notice:', error);
+        setMessage('Network error while deleting notice.');
+      } finally {
+        setIsLoading(false);
+        setTimeout(() => setMessage(''), 5000);
+      }
+    });
+  };
+
+  return (
+    <div className="p-4 bg-white rounded-lg shadow-inner">
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Manage Notices for Users</h3>
+      {message && (
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-orange-100 border border-orange-400 text-orange-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+          <span className="block sm:inline">{message}</span>
+        </div>
+      )}
+      {/* Removed the backend implementation note */}
+
+      <form onSubmit={editingNotice ? handleUpdateNotice : handleAddNotice} className="mb-8 bg-orange-50 p-6 rounded-lg shadow-sm border border-orange-100">
+        <h4 className="text-xl font-medium text-gray-700 mb-4">{editingNotice ? 'Edit Notice' : 'Create New Notice'}</h4>
+        <div className="mb-4">
+          <label htmlFor="noticeTitle" className="block text-gray-700 text-sm font-bold mb-2">
+            Notice Title
+          </label>
+          <input
+            type="text"
+            id="noticeTitle"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-orange-200" // Smaller padding, lighter ring
+            value={newNoticeTitle}
+            onChange={(e) => setNewNoticeTitle(e.target.value)}
+            placeholder="e.g., Important Meeting Reminder"
+            required
+            disabled={isLoading}
+          />
+        </div>
+        <div className="mb-4">
+          <label htmlFor="noticeContent" className="block text-gray-700 text-sm font-bold mb-2">
+            Notice Content
+          </label>
+          <textarea
+            id="noticeContent"
+            className="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-orange-200" // Smaller padding, lighter ring
+            value={newNoticeContent}
+            onChange={(e) => setNewNoticeContent(e.target.value)}
+            placeholder="e.g., Please fill in your timesheets by EOD. Mandatory meeting at 10 AM in Conference Room A."
+            rows="5"
+            required
+            disabled={isLoading}
+          ></textarea>
+        </div>
+        <div className="flex space-x-4">
+          <button
+            type="submit"
+            className="bg-orange-300 hover:bg-orange-400 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out transform hover:scale-105 text-sm" // Lighter, smaller, less shadow
+            disabled={isLoading}
+          >
+            {isLoading ? (editingNotice ? 'Updating...' : 'Creating...') : (editingNotice ? 'Update Notice' : 'Create Notice')}
+          </button>
+          {editingNotice && (
+            <button
+              type="button"
+              onClick={() => { setEditingNotice(null); setNewNoticeTitle(''); setNewNoticeContent(''); }}
+              className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg shadow-sm transition duration-300 ease-in-out transform hover:scale-105 text-sm" // Lighter, smaller, less shadow
+              disabled={isLoading}
+            >
+              Cancel Edit
+            </button>
+          )}
+        </div>
+      </form>
+
+      <h4 className="text-xl font-medium text-gray-700 mb-3">Existing Notices</h4>
+      {isLoading && notices.length === 0 ? (
+        <p className="text-gray-500">Loading notices...</p>
+      ) : notices.length === 0 ? (
+        <p className="text-gray-500">No notices created yet. Create one above!</p>
+      ) : (
+        <ul className="space-y-3"> {/* Slightly reduced spacing */}
+          {notices.map((notice) => (
+            <li key={notice.id} className="bg-orange-100 p-3 rounded-lg shadow-sm border border-orange-200"> {/* Smaller padding */}
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <p className="font-semibold text-base text-orange-800">{notice.title}</p> {/* Smaller font */}
+                  <p className="text-gray-600 text-xs">Created by: {notice.created_by_username || 'Admin'} on {moment(notice.created_at).format('MMM DD, YYYY HH:mm')}</p> {/* Smaller font */}
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleEditNotice(notice)}
+                    className="px-3 py-1.5 bg-yellow-300 text-gray-800 rounded-lg hover:bg-yellow-400 transition duration-300 text-xs shadow-sm" // Lighter, smaller, less shadow
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeleteNotice(notice.id)}
+                    className="px-3 py-1.5 bg-red-300 text-white rounded-lg hover:bg-red-400 transition duration-300 text-xs shadow-sm" // Lighter, smaller, less shadow
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <p className="text-gray-700 text-sm">{notice.content}</p> {/* Smaller font */}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+
+// NEW COMPONENT: UserNotices (User Dashboard)
+function UserNotices({ userId }) {
+  const [notices, setNotices] = useState([]);
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchNotices = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await authenticatedFetch(`${API_BASE_URL}/notices/`, {
+        method: 'GET',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        // Sort notices by creation date, newest first
+        setNotices(data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+      } else {
+        // If response is not OK, log the raw text for debugging
+        const errorText = await response.text();
+        console.error('Failed to fetch notices. Response status:', response.status, 'Response text:', errorText);
+        setMessage(`Failed to fetch notices: ${response.status} - ${errorText || 'Unknown error'}.`);
+      }
+    } catch (error) {
+      console.error('Error fetching notices:', error);
+      setMessage('Network error while fetching notices.');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setMessage(''), 5000); // Keep message longer for backend errors
+    }
+  }, [authenticatedFetch]);
+
+  useEffect(() => {
+    if (userId) {
+      fetchNotices();
+    }
+  }, [userId, fetchNotices]);
+
+  return (
+    <div className="p-4 bg-white rounded-lg shadow-inner">
+      <h3 className="text-2xl font-medium text-gray-700 mb-4">Important Notices & Reminders</h3>
+      {message && (
+        <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-blue-100 border border-blue-400 text-blue-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+          <span className="block sm:inline">{message}</span>
+        </div>
+      )}
+      {/* Removed the backend implementation note */}
+
+      {isLoading && notices.length === 0 ? (
+        <p className="text-gray-500">Loading notices...</p>
+      ) : notices.length === 0 ? (
+        <p className="text-gray-500">No notices available at this time.</p>
+      ) : (
+        <ul className="space-y-3"> {/* Slightly reduced spacing */}
+          {notices.map((notice) => (
+            <li key={notice.id} className="bg-blue-50 p-3 rounded-lg shadow-md border border-blue-100"> {/* Smaller padding */}
+              <p className="font-semibold text-base text-blue-800 mb-1">{notice.title}</p> {/* Smaller font */}
+              <p className="text-gray-700 text-sm mb-2">{notice.content}</p> {/* Smaller font */}
+              <p className="text-gray-500 text-xs"> {/* Smaller font */}
+                Posted by: {notice.created_by_username || 'Admin'} on {moment(notice.created_at).format('MMM DD, YYYY HH:mm')}
+              </p>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -3627,37 +3341,27 @@ function HourlyUpdatesReport({ userId }) {
 
 
 // Admin Dashboard Component
-function AdminDashboard({ userId, openConfirmModal, viewTaskDetails }) { // Added viewTaskDetails prop
-  const [activeTab, setActiveTab] = useState('projects'); // Default tab
+function AdminDashboard({ userId, openConfirmModal, viewTaskDetails, onLeaveStatusChange }) { // Added onLeaveStatusChange prop
+  const [activeTab, setActiveTab] = useState('projects-tasks'); // Default tab, changed
 
   return (
     <div className="p-6">
       <h2 className="text-3xl font-semibold text-gray-700 mb-6">Admin Dashboard</h2>
       <div className="flex flex-wrap border-b border-gray-200 mb-6">
         <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'projects'
-              ? 'bg-blue-200 text-blue-800 border-b-4 border-blue-500'
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 ${ // Smaller padding, smaller font
+            activeTab === 'projects-tasks' // Combined tab
+              ? 'bg-blue-200 text-blue-800 border-b-4 border-blue-400' // Lighter border
               : 'text-gray-600 hover:bg-gray-100'
           }`}
-          onClick={() => setActiveTab('projects')}
+          onClick={() => setActiveTab('projects-tasks')}
         >
-          Project Management
+          Projects & Tasks
         </button>
         <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'tasks'
-              ? 'bg-green-200 text-green-800 border-b-4 border-green-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('tasks')}
-        >
-          Task Assignment
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 ${ // Smaller padding, smaller font
             activeTab === 'users'
-              ? 'bg-purple-200 text-purple-800 border-b-4 border-purple-500'
+              ? 'bg-purple-200 text-purple-800 border-b-4 border-purple-400' // Lighter border
               : 'text-gray-600 hover:bg-gray-100'
           }`}
           onClick={() => setActiveTab('users')}
@@ -3665,9 +3369,9 @@ function AdminDashboard({ userId, openConfirmModal, viewTaskDetails }) { // Adde
           User Management
         </button>
         <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 ${ // Smaller padding, smaller font
             activeTab === 'leave-approval'
-              ? 'bg-red-200 text-red-800 border-b-4 border-red-500'
+              ? 'bg-red-200 text-red-800 border-b-4 border-red-400' // Lighter border
               : 'text-gray-600 hover:bg-gray-100'
           }`}
           onClick={() => setActiveTab('leave-approval')}
@@ -3675,29 +3379,39 @@ function AdminDashboard({ userId, openConfirmModal, viewTaskDetails }) { // Adde
           Leave Approval
         </button>
         <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
-            activeTab === 'reporting'
-              ? 'bg-teal-200 text-teal-800 border-b-4 border-teal-500'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-          onClick={() => setActiveTab('reporting')}
-        >
-          Reporting
-        </button>
-        <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 ${ // Smaller padding, smaller font
             activeTab === 'hourly-updates'
-              ? 'bg-gray-200 text-gray-800 border-b-4 border-gray-500'
+              ? 'bg-teal-200 text-teal-800 border-b-4 border-teal-400' // Using teal for admin hourly updates, lighter border
               : 'text-gray-600 hover:bg-gray-100'
           }`}
           onClick={() => setActiveTab('hourly-updates')}
         >
-          Hourly Updates
+          Daily Hourly Updates
         </button>
         <button
-          className={`py-3 px-6 text-lg font-medium rounded-t-lg transition duration-300 ${
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 ${ // Smaller padding, smaller font
+            activeTab === 'workday-timesheets' // NEW TAB
+              ? 'bg-indigo-200 text-indigo-800 border-b-4 border-indigo-400' // Lighter border
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('workday-timesheets')} // NEW TAB
+        >
+          Workday Timesheets
+        </button>
+        <button
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 ${ // Smaller padding, smaller font
+            activeTab === 'notices' // NEW TAB for Admin
+              ? 'bg-orange-200 text-orange-800 border-b-4 border-orange-400' // Lighter border
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('notices')} // NEW TAB
+        >
+          Notice Management
+        </button>
+        <button
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 ${ // Smaller padding, smaller font
             activeTab === 'calendar'
-              ? 'bg-orange-200 text-orange-800 border-b-4 border-orange-500'
+              ? 'bg-yellow-200 text-yellow-800 border-b-4 border-yellow-400' // Changed color for calendar, lighter border
               : 'text-gray-600 hover:bg-gray-100'
           }`}
           onClick={() => setActiveTab('calendar')}
@@ -3706,18 +3420,18 @@ function AdminDashboard({ userId, openConfirmModal, viewTaskDetails }) { // Adde
         </button>
       </div>
 
-      {activeTab === 'projects' ? (
-        <ProjectManagement userId={userId} openConfirmModal={openConfirmModal} />
-      ) : activeTab === 'tasks' ? (
-        <TaskAssignment userId={userId} openConfirmModal={openConfirmModal} />
+      {activeTab === 'projects-tasks' ? ( // Render combined component
+        <ProjectAndTaskManagement userId={userId} openConfirmModal={openConfirmModal} />
       ) : activeTab === 'users' ? (
         <UserManagement userId={userId} openConfirmModal={openConfirmModal} />
       ) : activeTab === 'leave-approval' ? (
-        <LeaveApproval userId={userId} openConfirmModal={openConfirmModal} />
-      ) : activeTab === 'reporting' ? (
-        <OldReporting userId={userId} />
+        <LeaveApproval userId={userId} openConfirmModal={openConfirmModal} onLeaveStatusChange={onLeaveStatusChange} />
       ) : activeTab === 'hourly-updates' ? (
         <HourlyUpdatesReport userId={userId} />
+      ) : activeTab === 'workday-timesheets' ? (
+        <WorkdayTimesheetView userId={userId} />
+      ) : activeTab === 'notices' ? ( // Render new Notice Management
+        <NoticeManagement userId={userId} openConfirmModal={openConfirmModal} />
       ) : (
         <CalendarView userId={userId} userRole="admin" viewTaskDetails={viewTaskDetails} />
       )}
@@ -3725,8 +3439,94 @@ function AdminDashboard({ userId, openConfirmModal, viewTaskDetails }) { // Adde
   );
 }
 
+// User Dashboard Component
+function UserDashboard({ userId, openConfirmModal, viewTaskDetails, onLeaveStatusChange, newNoticesAvailable, onViewNoticesTab, newTasksAvailable, onMyTasksViewed }) { // NEW PROPS: newTasksAvailable, onMyTasksViewed
+  const [activeTab, setActiveTab] = useState('my-tasks'); // Default tab
 
-// --- MAIN APP COMPONENT (DEFINED LAST) ---
+  return (
+    <div className="p-6">
+      <h2 className="text-3xl font-semibold text-gray-700 mb-6">User Dashboard</h2>
+      <div className="flex flex-wrap border-b border-gray-200 mb-6">
+        <button
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 relative ${ // Smaller padding, smaller font, added relative for dot
+            activeTab === 'my-tasks'
+              ? 'bg-indigo-200 text-indigo-800 border-b-4 border-indigo-400' // Lighter border
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => {
+            setActiveTab('my-tasks');
+            onMyTasksViewed(userId); // Mark tasks as viewed when this tab is opened
+          }}
+        >
+          My Tasks
+          {newTasksAvailable && ( // Conditional dot for new tasks
+            <span className="absolute top-1 right-1 inline-flex items-center justify-center w-2.5 h-2.5 text-xs font-bold text-white bg-red-500 rounded-full"></span>
+          )}
+        </button>
+        <button
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 ${ // Smaller padding, smaller font
+            activeTab === 'hourly-time-entry'
+              ? 'bg-purple-200 text-purple-800 border-b-4 border-purple-400' // Lighter purple for visibility, lighter border
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('hourly-time-entry')}
+        >
+          Hourly Time Entry
+        </button>
+        {/* Removed Timesheet Week View as per user request */}
+        <button
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 ${ // Smaller padding, smaller font
+            activeTab === 'leave-request'
+              ? 'bg-pink-200 text-pink-800 border-b-4 border-pink-400' // Lighter border
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('leave-request')}
+        >
+          Leave Request
+        </button>
+        <button
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 relative ${ // Smaller padding, smaller font, added relative for dot
+            activeTab === 'notices' // NEW TAB for User
+              ? 'bg-blue-200 text-blue-800 border-b-4 border-blue-400' // Lighter border
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => {
+            setActiveTab('notices');
+            onViewNoticesTab(userId); // Mark notices as viewed when this tab is opened
+          }}
+        >
+          Notices
+          {newNoticesAvailable && ( // Conditional dot for new notices
+            <span className="absolute top-1 right-1 inline-flex items-center justify-center w-2.5 h-2.5 text-xs font-bold text-white bg-red-500 rounded-full"></span>
+          )}
+        </button>
+        <button
+          className={`py-2.5 px-5 text-base font-medium rounded-t-lg transition duration-300 ${ // Smaller padding, smaller font
+            activeTab === 'calendar'
+              ? 'bg-orange-200 text-orange-800 border-b-4 border-orange-400' // Changed color for calendar, lighter border
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+          onClick={() => setActiveTab('calendar')}
+        >
+          Calendar View
+        </button>
+      </div>
+
+      {activeTab === 'my-tasks' ? (
+        <UserTaskManagement userId={userId} openConfirmModal={openConfirmModal} viewTaskDetails={viewTaskDetails} onMyTasksViewed={onMyTasksViewed} />
+      ) : activeTab === 'hourly-time-entry' ? (
+        <UserHourlyTimeEntry userId={userId} openConfirmModal={openConfirmModal} />
+      ) : activeTab === 'leave-request' ? (
+        <LeaveRequest userId={userId} openConfirmModal={openConfirmModal} onLeaveStatusChange={onLeaveStatusChange} />
+      ) : activeTab === 'notices' ? ( // Render new User Notices
+        <UserNotices userId={userId} />
+      ) : (
+        <CalendarView userId={userId} userRole="user" viewTaskDetails={viewTaskDetails} />
+      )}
+    </div>
+  );
+}
+
 
 // Main App Component - Defined last as per best practice for clarity and bundling
 function App() {
@@ -3735,22 +3535,27 @@ function App() {
   const [userId, setUserId] = useState(null);
   const [currentPage, setCurrentPage] = useState('login'); // 'login', 'register', 'admin-login', 'admin', 'user', 'task-detail'
   const [message, setMessage] = useState('');
+  const [loadingAuth, setLoadingAuth] = useState(true); // NEW: Add loading state for authentication
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMessage, setModalMessage] = useState('');
   const [modalConfirmAction, setModalConfirmAction] = useState(null);
 
-  // --- NEW State Variables for Task Time Entries ---
+  // --- State Variables for Task Time Entries (for TaskDetailView) ---
   const [selectedTaskId, setSelectedTaskId] = useState(null); // Stores the ID of the task currently being viewed
   const [selectedTask, setSelectedTask] = useState(null); // Stores the full object of the selected task
   const [taskTimeEntries, setTaskTimeEntries] = useState([]); // Stores time entries for the selected task
 
-  // State for the new time entry form
-  const [newTimeEntryStartTime, setNewTimeEntryStartTime] = useState('');
-  const [newTimeEntryEndTime, setNewTimeEntryEndTime] = useState('');
-  const [newTimeEntryDescription, setNewTimeEntryDescription] = useState('');
-  const [timeEntryError, setTimeEntryError] = useState('');
-  const [timeEntrySuccess, setTimeEntrySuccess] = useState('');
+  // State to trigger re-fetch of leave requests in user dashboard
+  // This state is incremented by admin's LeaveApproval component
+  // and used as a dependency in the user's LeaveRequest component to trigger re-fetch.
+  const [leaveRequestsUpdated, setLeaveRequestsUpdated] = useState(0);
+
+  // NEW STATE: For new notices dot
+  const [newNoticesAvailable, setNewNoticesAvailable] = useState(false);
+
+  // NEW STATE: For new tasks dot
+  const [newTasksAvailable, setNewTasksAvailable] = useState(false);
 
 
   const openConfirmModal = (msg, onConfirm) => {
@@ -3772,6 +3577,76 @@ function App() {
     setModalConfirmAction(null);
   };
 
+  // Callback to trigger re-fetch of leave requests in user dashboard
+  const handleLeaveStatusChange = useCallback(() => {
+    console.log('[App] handleLeaveStatusChange triggered. Incrementing leaveRequestsUpdated.');
+    setLeaveRequestsUpdated(prev => prev + 1);
+  }, []);
+
+  // NEW FUNCTION: Check for new notices
+  const checkNewNotices = useCallback(async (currentUserId) => {
+    if (!currentUserId) {
+        setNewNoticesAvailable(false);
+        return;
+    }
+    try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/notices/`, { method: 'GET' });
+        if (response.ok) {
+            const notices = await response.json();
+            const lastViewedTimestamp = localStorage.getItem(`last_viewed_notices_${currentUserId}`);
+            const hasUnread = notices.some(notice => {
+                if (!lastViewedTimestamp) return true; // If never viewed, all are new
+                return new Date(notice.created_at).getTime() > new Date(lastViewedTimestamp).getTime();
+            });
+            setNewNoticesAvailable(hasUnread);
+        } else {
+            console.error('Failed to check for new notices:', response.status);
+            setNewNoticesAvailable(false); // Assume no new if fetch fails
+        }
+    } catch (error) {
+        console.error('Network error checking for new notices:', error);
+        setNewNoticesAvailable(false);
+    }
+  }, [authenticatedFetch]);
+
+  // NEW FUNCTION: Mark notices as viewed
+  const markNoticesAsViewed = useCallback((currentUserId) => {
+      localStorage.setItem(`last_viewed_notices_${currentUserId}`, new Date().toISOString());
+      setNewNoticesAvailable(false);
+  }, []);
+
+  // NEW FUNCTION: Check for new tasks
+  const checkNewTasks = useCallback(async (currentUserId) => {
+    if (!currentUserId) {
+        setNewTasksAvailable(false);
+        return;
+    }
+    try {
+        const response = await authenticatedFetch(`${API_BASE_URL}/tasks/?assigned_to=${currentUserId}`, { method: 'GET' });
+        if (response.ok) {
+            const tasks = await response.json();
+            const lastViewedTimestamp = localStorage.getItem(`last_viewed_tasks_${currentUserId}`);
+            const hasUnread = tasks.some(task => {
+                if (!lastViewedTimestamp) return true; // If never viewed, all are new
+                return new Date(task.created_at).getTime() > new Date(lastViewedTimestamp).getTime();
+            });
+            setNewTasksAvailable(hasUnread);
+        } else {
+            console.error('Failed to check for new tasks:', response.status);
+            setNewTasksAvailable(false); // Assume no new if fetch fails
+        }
+    } catch (error) {
+        console.error('Network error checking for new tasks:', error);
+        setNewTasksAvailable(false);
+    }
+  }, [authenticatedFetch]);
+
+  // NEW FUNCTION: Mark tasks as viewed
+  const markTasksAsViewed = useCallback((currentUserId) => {
+      localStorage.setItem(`last_viewed_tasks_${currentUserId}`, new Date().toISOString());
+      setNewTasksAvailable(false);
+  }, []);
+
 
   useEffect(() => {
     const accessToken = localStorage.getItem('access_token');
@@ -3779,17 +3654,24 @@ function App() {
     const storedUserId = localStorage.getItem('user_id');
 
     if (accessToken && storedUserRole && storedUserId) {
+      const parsedUserId = parseInt(storedUserId);
       setIsAuthenticated(true);
       setUserRole(storedUserRole);
-      setUserId(parseInt(storedUserId));
+      setUserId(parsedUserId);
       setCurrentPage(storedUserRole === 'admin' ? 'admin' : 'user');
+      // Call checkNewNotices and checkNewTasks only if it's a regular user
+      if (storedUserRole === 'user') {
+        checkNewNotices(parsedUserId);
+        checkNewTasks(parsedUserId);
+      }
     } else {
       setIsAuthenticated(false);
       setUserRole(null);
       setUserId(null);
       setCurrentPage('login');
     }
-  }, []);
+    setLoadingAuth(false); // Set loading to false after auth check
+  }, [checkNewNotices, checkNewTasks]); // Added checkNewNotices and checkNewTasks to dependencies
 
   const handleLogin = async (username, password) => {
     setMessage('');
@@ -3835,6 +3717,13 @@ function App() {
         setUserId(userIdFromBackend);
         setCurrentPage(userRoleFromBackend === 'admin' ? 'admin' : 'user');
         setMessage('Login successful!');
+
+        // After successful login, check for new notices and tasks if it's a regular user
+        if (userRoleFromBackend === 'user') {
+            checkNewNotices(userIdFromBackend);
+            checkNewTasks(userIdFromBackend);
+        }
+
       } else {
         let errorData;
         try {
@@ -3858,13 +3747,16 @@ function App() {
     setMessage('');
     const refreshToken = localStorage.getItem('refresh_token');
     try {
+      // Note: If you don't have a backend /logout/ endpoint that blacklists tokens,
+      // this fetch will likely fail with a 404 or 405.
+      // For stateless JWTs, clearing local storage is often sufficient for logout.
       const response = await authenticatedFetch(`${API_BASE_URL}/logout/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, // Ensure content type is set
-        body: JSON.stringify({ refresh: refreshToken }), // Changed refresh_token to refresh
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh: refreshToken }),
       });
 
-      if (response.ok) {
+      if (response.ok || response.status === 404 || response.status === 405) { // Treat 404/405 as successful logout if no explicit endpoint
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         localStorage.removeItem('user_role');
@@ -3878,11 +3770,8 @@ function App() {
         setSelectedTaskId(null);
         setSelectedTask(null);
         setTaskTimeEntries([]);
-        setNewTimeEntryStartTime('');
-        setNewTimeEntryEndTime('');
-        setNewTimeEntryDescription('');
-        setTimeEntryError('');
-        setTimeEntrySuccess('');
+        setNewNoticesAvailable(false); // Clear new notices state on logout
+        setNewTasksAvailable(false); // Clear new tasks state on logout
         // --- END NEW ---
       } else {
         const errorData = await response.json();
@@ -3922,18 +3811,18 @@ function App() {
               const data = await response.json();
               setSelectedTask(data);
           } else {
-              console.error(`Failed to fetch task ${taskId} details:`, response.statusText);
+              console.error(`Failed to fetch task ${taskId} details:`, response.status, response.statusText);
               setSelectedTask(null);
               setMessage(`Failed to load task details: ${response.statusText}`);
           }
       } catch (error) {
           console.error(`Error fetching task ${taskId} details:`, error);
           setSelectedTask(null);
-          setMessage(`Network error fetching task details.`);
+              setMessage(`Network error fetching task details.`);
       } finally {
           setTimeout(() => setMessage(''), 5000);
       }
-  }, []);
+  }, [authenticatedFetch]);
 
   // Function to fetch time entries for a specific task
   const fetchTaskTimeEntries = useCallback(async (taskId) => {
@@ -3947,7 +3836,7 @@ function App() {
               const data = await response.json();
               setTaskTimeEntries(data);
           } else {
-              console.error(`Failed to fetch time entries for task ${taskId}:`, response.statusText);
+              console.error(`Failed to fetch time entries for task ${taskId}:`, response.status, response.statusText);
               setTaskTimeEntries([]);
               setMessage(`Failed to load time entries: ${response.statusText}`);
           }
@@ -3958,66 +3847,8 @@ function App() {
       } finally {
           setTimeout(() => setMessage(''), 5000);
       }
-  }, []);
+  }, [authenticatedFetch]);
 
-  // Handle form submission for new time entry
-  const handleTimeEntrySubmit = async (e) => {
-      e.preventDefault();
-      setTimeEntryError('');
-      setTimeEntrySuccess('');
-
-      if (!selectedTaskId) {
-          setTimeEntryError('No task selected.');
-          return;
-      }
-
-      if (!newTimeEntryStartTime || !newTimeEntryEndTime || !newTimeEntryDescription) {
-          setTimeEntryError('All fields are required.');
-          return;
-      }
-
-      const token = localStorage.getItem('access_token');
-      if (!token) {
-          setTimeEntryError('Authentication required.');
-          return;
-      }
-
-      try {
-          // Format dates to ISO 8601 string for Django
-          // moment().toISOString() will include timezone offset, which Django's DateTimeField expects
-          const formattedStartTime = moment(newTimeEntryStartTime).toISOString();
-          const formattedEndTime = moment(newTimeEntryEndTime).toISOString();
-
-          const response = await authenticatedFetch(`${API_BASE_URL}/task-time-entries/`, {
-              method: 'POST',
-              body: JSON.stringify({
-                  task: selectedTaskId,
-                  start_time: formattedStartTime,
-                  end_time: formattedEndTime,
-                  description: newTimeEntryDescription,
-              }),
-          });
-
-          if (response.ok) {
-              setTimeEntrySuccess('Time entry added successfully!');
-              // Clear form fields
-              setNewTimeEntryStartTime('');
-              setNewTimeEntryEndTime('');
-              setNewTimeEntryDescription('');
-              // Re-fetch time entries to update the list
-              fetchTaskTimeEntries(selectedTaskId);
-          } else {
-              const errorData = await response.json();
-              setTimeEntryError(errorData.detail || 'Failed to add time entry.');
-              console.error('Failed to add time entry:', errorData);
-          }
-      } catch (error) {
-          setTimeEntryError('Network error or invalid data.');
-          console.error('Error adding time entry:', error);
-      } finally {
-          setTimeout(() => { setTimeEntryError(''); setTimeEntrySuccess(''); }, 5000);
-      }
-  };
 
   // Effect to fetch task details and time entries when selectedTaskId changes
   useEffect(() => {
@@ -4029,6 +3860,14 @@ function App() {
 
 
   const renderContent = () => {
+    if (loadingAuth) { // NEW: Show loading while authentication status is being determined
+      return (
+        <div className="flex justify-center items-center h-64">
+          <p className="text-xl text-gray-600">Loading application...</p>
+        </div>
+      );
+    }
+
     if (!isAuthenticated) {
       if (currentPage === 'register') {
         return <Register onRegisterSuccess={handleRegisterSuccess} onGoToLogin={() => setCurrentPage('login')} />;
@@ -4037,11 +3876,11 @@ function App() {
       } else { // currentPage === 'login'
         return <Login onLogin={handleLogin} onGoToRegister={() => setCurrentPage('register')} onGoToAdminLogin={() => setCurrentPage('admin-login')} />;
       }
-    } else if (selectedTaskId) { // NEW: Render TaskDetailView if a task is selected
+    } else if (currentPage === 'task-detail') { // NEW: Render TaskDetailView if a task is selected
         return (
             <div className="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-3xl mx-auto text-white">
                 <button onClick={() => setSelectedTaskId(null) || setCurrentPage(userRole === 'admin' ? 'admin' : 'user')}
-                        className="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 transition duration-300 mb-6">
+                        className="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 transition duration-300 mb-6 text-sm shadow-sm"> {/* Smaller, less shadow */}
                     &larr; Back to Dashboard
                 </button>
 
@@ -4055,69 +3894,39 @@ function App() {
                         <p className="text-gray-400 text-sm mb-6">
                             Assigned To: {selectedTask.assigned_to_username || 'N/A'} | Project: {selectedTask.project_name || 'N/A'}
                             {selectedTask.parent_task_name && ` | Parent: ${selectedTask.parent_task_name}`}
+                            {selectedTask.reporting_manager_username && ` | Reporting Manager: ${selectedTask.reporting_manager_username}`}
                         </p>
-
-                        <hr className="border-gray-700 my-6" />
-
-                        <h3 className="text-2xl font-bold mb-4 text-blue-300">Log Hourly Time</h3>
-                        {timeEntryError && <p className="text-red-400 mb-4">{timeEntryError}</p>}
-                        {timeEntrySuccess && <p className="text-green-400 mb-4">{timeEntrySuccess}</p>}
-                        <form onSubmit={handleTimeEntrySubmit} className="space-y-4">
-                            <div>
-                                <label htmlFor="startTime" className="block text-gray-400 text-sm font-bold mb-2">Start Time:</label>
-                                <input
-                                    type="datetime-local"
-                                    id="startTime"
-                                    value={newTimeEntryStartTime}
-                                    onChange={(e) => setNewTimeEntryStartTime(e.target.value)}
-                                    className="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="endTime" className="block text-gray-400 text-sm font-bold mb-2">End Time:</label>
-                                <input
-                                    type="datetime-local"
-                                    id="endTime"
-                                    value={newTimeEntryEndTime}
-                                    onChange={(e) => setNewTimeEntryEndTime(e.target.value)}
-                                    className="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="description" className="block text-gray-400 text-sm font-bold mb-2">What did you do?</label>
-                                <textarea
-                                    id="description"
-                                    value={newTimeEntryDescription}
-                                    onChange={(e) => setNewTimeEntryDescription(e.target.value)}
-                                    className="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 h-24 text-white"
-                                    placeholder="e.g., Coded login functionality, Reviewed PR"
-                                    required
-                                ></textarea>
-                            </div>
-                            <button type="submit" className="w-full p-3 rounded-lg bg-green-600 hover:bg-green-700 transition duration-300 font-semibold">
-                                Add Time Entry
-                            </button>
-                        </form>
 
                         <hr className="border-gray-700 my-6" />
 
                         <h3 className="text-2xl font-bold mb-4 text-blue-300">Logged Time for This Task</h3>
                         {taskTimeEntries.length > 0 ? (
-                            <ul className="space-y-4">
-                                {taskTimeEntries.map(entry => (
-                                    <li key={entry.id} className="bg-gray-700 p-4 rounded-lg shadow-md">
-                                        <p className="text-lg font-semibold text-blue-200">
-                                            {moment(entry.start_time).format('MMM D,YYYY HH:mm')} - {moment(entry.end_time).format('HH:mm')}
-                                        </p>
-                                        <p className="text-gray-300">Duration: {entry.duration_minutes.toFixed(0)} minutes ({entry.duration_hours.toFixed(2)} hours)</p>
-                                        <p className="text-gray-400 text-sm mt-2">{entry.description}</p>
-                                    </li>
-                                ))}
-                            </ul>
+                            <div className="overflow-x-auto relative shadow-md sm:rounded-lg">
+                                <table className="w-full text-sm text-left text-gray-400 light-table-style">
+                                    <thead className="text-xs text-gray-300 uppercase bg-gray-700 light-table-header">
+                                        <tr>
+                                            <th scope="col" className="py-2 px-4">Date</th> {/* Smaller padding */}
+                                            <th scope="col" className="py-2 px-4">Start Time</th> {/* Smaller padding */}
+                                            <th scope="col" className="py-2 px-4">End Time</th> {/* Smaller padding */}
+                                            <th scope="col" className="py-2 px-4">Duration</th> {/* Smaller padding */}
+                                            <th scope="col" className="py-2 px-4">Description</th> {/* Smaller padding */}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {taskTimeEntries.sort((a, b) => moment(b.start_time).valueOf() - moment(a.start_time).valueOf()).map(entry => (
+                                            <tr key={entry.id} className="bg-gray-800 border-b border-gray-700 hover:bg-gray-700">
+                                                <td className="py-3 px-4">{moment(entry.start_time).format('YYYY-MM-DD')}</td> {/* Smaller padding */}
+                                                <td className="py-3 px-4">{moment(entry.start_time).format('HH:mm')}</td> {/* Smaller padding */}
+                                                <td className="py-3 px-4">{moment(entry.end_time).format('HH:mm')}</td> {/* Smaller padding */}
+                                                <td className="py-3 px-4 font-bold text-blue-200">{formatHoursToMinutes(entry.duration_hours)}</td> {/* Smaller padding */}
+                                                <td className="py-3 px-4">{entry.description}</td> {/* Smaller padding */}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         ) : (
-                            <p className="text-gray-400">No time entries logged for this task yet.</p>
+                            <p className="text-gray-400 text-center py-4">No time entries logged for this task yet.</p>
                         )}
                     </>
                 ) : (
@@ -4126,9 +3935,18 @@ function App() {
             </div>
         );
     } else if (userRole === 'admin') {
-      return <AdminDashboard userId={userId} openConfirmModal={openConfirmModal} viewTaskDetails={viewTaskDetails} />;
+      return <AdminDashboard userId={userId} openConfirmModal={openConfirmModal} viewTaskDetails={viewTaskDetails} onLeaveStatusChange={handleLeaveStatusChange} />;
     } else { // userRole === 'user'
-      return <UserDashboard userId={userId} openConfirmModal={openConfirmModal} viewTaskDetails={viewTaskDetails} />;
+      return <UserDashboard
+                userId={userId}
+                openConfirmModal={openConfirmModal}
+                viewTaskDetails={viewTaskDetails}
+                onLeaveStatusChange={handleLeaveStatusChange}
+                newNoticesAvailable={newNoticesAvailable} // Pass newNoticesAvailable
+                onViewNoticesTab={markNoticesAsViewed} // Pass markNoticesAsViewed
+                newTasksAvailable={newTasksAvailable} // Pass newTasksAvailable
+                onMyTasksViewed={markTasksAsViewed} // Pass markTasksAsViewed
+             />;
     }
   };
 
@@ -4138,10 +3956,10 @@ function App() {
         <h1 className="text-3xl font-bold text-gray-800">WorkLog</h1>
         {isAuthenticated && (
           <nav className="flex items-center space-x-4">
-            <span className="text-gray-700 font-medium">Logged in as: {userRole === 'admin' ? 'Admin' : 'User'} (ID: {userId})</span>
+            <span className="text-gray-700 font-medium">Logged in as: {userRole === 'admin' ? 'Admin' : 'User'}</span> {/* Removed ID */}
             <button
               onClick={handleLogout}
-              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition duration-300 shadow-md"
+              className="px-3 py-1.5 bg-red-300 text-white rounded-lg hover:bg-red-400 transition duration-300 shadow-sm text-sm" // Lighter, smaller, less shadow
             >
               Logout
             </button>
@@ -4150,7 +3968,7 @@ function App() {
       </header>
       <main className="container mx-auto p-4 py-8">
         {message && (
-          <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-green-100 border border-green-400 text-green-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
+          <div className={`px-4 py-3 rounded relative mb-4 ${message.includes('successful') ? 'bg-green-100 border border-green-400 text-green-700' : message.includes('overwork') || message.includes('exceed') ? 'bg-yellow-100 border border-yellow-400 text-yellow-700' : 'bg-red-100 border border-red-400 text-red-700'}`} role="alert">
             <span className="block sm:inline">{message}</span>
           </div>
         )}
