@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'core',
     'corsheaders',
+    'django_filters',
     'rest_framework_simplejwt.token_blacklist',
     'whitenoise.runserver_nostatic',
 ]
@@ -166,6 +167,9 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_FILTER_BACKENDS': (
+        'django_filters.rest_framework.DjangoFilterBackend', # Add this line
+    ),
 }
 
 SIMPLE_JWT = {

@@ -3,12 +3,13 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from django.http import JsonResponse  # ✅ NEW: For root response
+from django.http import JsonResponse
 
 # Your views
 from core.views import (
     UserViewSet, ProjectViewSet, TaskViewSet, TimesheetEntryViewSet, LeaveRequestViewSet,
-    TaskTimeEntryListCreateView, TaskTimeEntryRetrieveUpdateDestroyView
+    TaskTimeEntryListCreateView, TaskTimeEntryRetrieveUpdateDestroyView,
+    NoticeViewSet # ✅ NEW: Import NoticeViewSet
 )
 from rest_framework_simplejwt.views import (
     TokenRefreshView,
@@ -29,6 +30,7 @@ router.register(r'projects', ProjectViewSet)
 router.register(r'tasks', TaskViewSet)
 router.register(r'timesheets', TimesheetEntryViewSet)
 router.register(r'leave-requests', LeaveRequestViewSet)
+router.register(r'notices', NoticeViewSet) # ✅ NEW: Register the NoticeViewSet
 
 urlpatterns = [
     path('admin/', admin.site.urls),
