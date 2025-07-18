@@ -5,8 +5,7 @@ import moment from 'moment'; // Import moment for date/time handling
 
 // Define your Django API base URL
 // IMPORTANT: This must be your deployed Render backend URL or your local Django backend URL
-const API_BASE_URL = 'http://127.0.0.1:8000/api'; // Changed to localhost for testing
-
+const API_BASE_URL = 'https://worklog-cuej.onrender.com/api';
 
 // Helper function to make authenticated API calls with JWT token
 async function authenticatedFetch(url, options = {}) {
