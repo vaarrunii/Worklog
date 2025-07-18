@@ -12,3 +12,4 @@ python-dotenv==1.0.1
 pytz==2025.2
 sqlparse==0.5.3
 whitenoise==6.6.0
+django-filter==25.1
